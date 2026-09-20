@@ -181,10 +181,22 @@ def check_parser():
     check("the face comes before the armour",
           order.index("face") < order.index("armour"), str(order))
 
-    # armour is never melted into the body by the sculpt pass
+    # Armour and clothing go through the sculpt pass now - left out of it they
+    # stayed as raw intersecting lofts and a sleeve ended in a flat disc in
+    # mid-air. What keeps them from melting into the body is that they are a
+    # different colour, and the sculpt pass fuses one colour group at a time.
+    colour_of = {s["part"]: s["color"] for s in plan["steps"]}
+    for piece in ("breastplate", "pauldron.L", "greave.R", "tassets"):
+        if piece in colour_of:
+            check("the %s cannot fuse into the body" % piece,
+                  colour_of[piece] != colour_of["chest"],
+                  "%s vs %s" % (colour_of[piece], colour_of["chest"]))
+
+    # the small details are still exempt, because a remesh would swallow them
     soft = {s["part"] for s in plan["steps"] if not s["hard"]}
-    for piece in ("breastplate", "helmet", "pauldron.L", "greave.R"):
-        check("the %s keeps its edges" % piece, piece not in soft)
+    for piece in ("visor", "buckle", "eye.L", "sword_blade"):
+        if piece in colour_of:
+            check("the %s keeps its edges" % piece, piece not in soft)
 
     # a kit brings its own colours only when the prompt names none
     steel = recipes.plan_from_prompt("a knight")

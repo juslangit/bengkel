@@ -49,15 +49,18 @@ def hex_to_rgb(h):
 TEXTURES = {}
 
 
-def _detail_image(material):
-    path = TEXTURES.get(material)
+def _image(material, kind):
+    maps = TEXTURES.get(material) or {}
+    path = maps.get(kind)
     if not path or not os.path.exists(path):
         return None
-    key = "bk_tex_" + material
+    key = "bk_%s_%s" % (material, kind)
     if key in bpy.data.images:
         return bpy.data.images[key]
     image = bpy.data.images.load(path, check_existing=True)
     image.name = key
+    # every one of these is data, not a picture: a normal map read as sRGB
+    # comes out with the wrong slope and the light falls the wrong way
     image.colorspace_settings.name = "Non-Color"
     return image
 
@@ -74,7 +77,8 @@ def material_for(color, detail, material="detail"):
     """
     emissive = float(detail.get("emissive", 0) or 0)
     glass = bool(detail.get("glass"))
-    image = None if (glass or emissive) else _detail_image(material)
+    plain = glass or emissive
+    image = None if plain else _image(material, "detail")
     key = "bk_%s%s%s%s" % (color.lstrip("#"),
                            "_e%g" % emissive if emissive else "",
                            "_glass" if glass else "",
@@ -90,6 +94,32 @@ def material_for(color, detail, material="detail"):
 
     if image:
         nodes, links = mat.node_tree.nodes, mat.node_tree.links
+
+        # roughness, so the highlight is not the same everywhere. A constant
+        # specular across a whole surface is most of what reads as plastic.
+        rough = _image(material, "rough")
+        if rough:
+            r = nodes.new("ShaderNodeTexImage")
+            r.image = rough
+            r.location = (-620, -40)
+            links.new(r.outputs["Color"], bsdf.inputs["Roughness"])
+
+        # relief, so the light catches the surface rather than a picture of it
+        normal = _image(material, "normal")
+        if normal:
+            n = nodes.new("ShaderNodeTexImage")
+            n.image = normal
+            n.location = (-620, -330)
+            nm = nodes.new("ShaderNodeNormalMap")
+            nm.inputs["Strength"].default_value = 1.0
+            nm.location = (-300, -330)
+            links.new(n.outputs["Color"], nm.inputs["Color"])
+            links.new(nm.outputs["Normal"], bsdf.inputs["Normal"])
+
+        metallic = float((TEXTURES.get(material) or {}).get("metallic", 0.0))
+        if metallic:
+            bsdf.inputs["Metallic"].default_value = metallic
+
         tex = nodes.new("ShaderNodeTexImage")
         tex.image = image
         tex.location = (-620, 260)

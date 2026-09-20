@@ -11,6 +11,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from '/web/vendor/GLTFLoader.js';
 import { OrbitControls } from '/web/vendor/OrbitControls.js';
+import { RGBELoader } from '/web/vendor/RGBELoader.js';
 
 const TOKEN = new URLSearchParams(location.search).get('t') || '';
 const $ = (id) => document.getElementById(id);
@@ -47,7 +48,7 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 0.95;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x15171c);
@@ -62,7 +63,24 @@ controls.dampingFactor = 0.07;
 controls.target.set(0, 0.9, 0);
 controls.maxPolarAngle = Math.PI * 0.52;
 
-scene.add(new THREE.HemisphereLight(0x9fb6d8, 0x2a2119, 1.35));
+/* A real room's worth of light, from a Poly Haven environment map. It lights
+   the model from every direction at once, which is what makes a surface read
+   as a surface rather than as a shape with a picture on it. The lamps below
+   stay, turned right down, only to keep a shadow under the model. */
+new RGBELoader().load('/api/hdri?t=' + encodeURIComponent(TOKEN), (hdr) => {
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  pmrem.compileEquirectangularShader();
+  scene.environment = pmrem.fromEquirectangular(hdr).texture;
+  scene.environmentIntensity = 1.0;
+  hdr.dispose();
+  pmrem.dispose();
+  key.intensity = 0.85;
+  rim.intensity = 0.15;
+  hemi.intensity = 0.10;
+}, undefined, () => { /* no environment: the lamps carry it, as before */ });
+
+const hemi = new THREE.HemisphereLight(0x9fb6d8, 0x2a2119, 1.35);
+scene.add(hemi);
 const key = new THREE.DirectionalLight(0xfff0d8, 2.5);
 key.position.set(4.5, 7.5, 4.0);
 key.castShadow = true;

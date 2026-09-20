@@ -184,6 +184,42 @@ undoing its own de-duplication; a one-pass greedy walk let an early dark colour
 take a light swatch and then ran out of palette. A palette smaller than the
 model shares swatches rather than distorting, and still never inverts.
 
+## How far this goes, and where it stops
+
+The modelling is procedural: a recipe reads the words and builds geometry to
+measured proportions. That has a ceiling, and it is worth naming rather than
+discovering. **A recipe cannot make a face.** Everything here is built from
+overlapping forms which are then fused, and a face built that way is either
+too small to survive the fusing or large enough to stop being features and
+become lumps. Both were tried. What the figure has now is a brow, a nose ridge,
+a jaw and a pair of eyes — a profile, not a likeness — and no amount of tuning
+in `recipes.py` will change that.
+
+Everything else has more room in it, and this is what has been spent on it so
+far: real materials, environment lighting, cross-section anatomy, hands with
+fingers, and garments that fuse into continuous clothing.
+
+## Materials and light
+
+A surface looks real when the **light** on it varies, not when the colour does.
+That is why flat colour with a photograph multiplied over it still read as
+painted plastic, and why the two changes below did more than any amount of
+extra geometry.
+
+**Every surface is a full material.** From the one Texturelabs photograph, three
+maps are derived — a colour detail map, a **normal map** from the slope of its
+greyscale so light catches the relief, and a **roughness map**, because darker
+and rougher go together on most real surfaces and a constant specular across a
+whole object is most of what reads as plastic. Metal also gets a metallic
+value. None of it is a real measurement — a height map guessed from a
+photograph's brightness reads a dark stain as a dent — but it is far better
+than the constants that were there before.
+
+**The viewport is lit by a room.** Three lamps in a void is what a 3D program
+looks like; a Poly Haven HDRI lighting the model from every direction at once
+is what a photograph looks like. It is CC0, it costs nothing, and it is the
+cheapest large step towards something looking real.
+
 ## Surfaces: textures from Texturelabs
 
 Nothing is perfectly flat any more. Every part is given a surface based on what
@@ -314,6 +350,8 @@ blender/
   recipes.py      words  ->  a build plan: the body, then the kit it wears
                   (no Blender needed, so the whole thing is testable)
   palette.py      a plan + a palette  ->  the plan, recoloured
+tools/pbr.py      one photograph  ->  colour, normal and roughness maps
+hdri/             the environment the viewport is lit by (CC0, Poly Haven)
   build.py        a build plan  ->  geometry, including lofts
   sculpt.py       loose parts   ->  one continuous form
   rig.py          geometry      ->  a skeleton and weights
@@ -324,7 +362,7 @@ animations/       .fbx clips you drop in
 palettes/         palettes fetched from Lospec, kept for offline use
 textures/         textures fetched from Texturelabs - never committed
 sessions/         everything Blender writes, one folder per run
-tests/check.py    779 checks, parser and real Blender
+tests/check.py    783 checks, parser and real Blender
 ```
 
 The one design decision everything else follows from: **Blender is started once
@@ -348,7 +386,7 @@ which is the usual reason hand-written rig animation comes out twisted.
 ## Checks
 
 ```
-python3 tests/check.py            # 779 checks, about 30 seconds
+python3 tests/check.py            # 783 checks, about 30 seconds
 python3 tests/check.py --quick    # fewer models
 python3 tests/check.py --parser-only   # no Blender needed
 ```

@@ -386,47 +386,32 @@ CURATED = {
     "detail": ["Grunge_201", "Grunge_328", "Grunge_160"],
 }
 
-# How hard each surface pushes. A multiply of 1.0 leaves the colour alone, so
-# these are the range the grey map is squeezed into: skin and cloth want a
-# whisper, rusted metal and bare soil can take a shove.
-STRENGTH = {
-    "detail": (0.84, 1.05), "fabric": (0.78, 1.06), "leather": (0.68, 1.06),
-    "metal": (0.62, 1.10), "wood": (0.62, 1.08), "stone": (0.60, 1.10),
-    "concrete": (0.68, 1.08), "brick": (0.58, 1.10), "soil": (0.64, 1.08),
-}
+# How hard each surface pushes, how rough it is and how metallic, all live in
+# tools/pbr.py next to the code that derives the maps.
 
 
-def _detail_map(source, target, low, high, size=1024):
-    """
-    Turn a photograph into something safe to multiply by: grey, mid-weighted
-    and squeezed into a narrow range. Used at full strength a photograph would
-    replace the colour; the point here is to disturb it, not to bury it.
-    """
-    from PIL import Image, ImageOps                     # system Python has it
-
-    im = Image.open(source).convert("L")
-    im.thumbnail((size, size), Image.LANCZOS)
-    im = ImageOps.autocontrast(im, cutoff=2)
-    span = high - low
-    im = im.point(lambda v: max(0, min(255, int((low + span * (v / 255.0))
-                                                / high * 255))))
-    os.makedirs(os.path.dirname(target), exist_ok=True)
-    im.save(target, "PNG", optimize=True)
-    return target
+sys.path.insert(0, os.path.join(HERE, "tools"))
+import pbr                                                  # noqa: E402
 
 
 def texture_for(material, seed=0):
     """
-    The detail map for a surface, fetching and preparing it the first time and
-    reusing it ever after. Returns None if it cannot be had - offline, say -
+    The full set of maps for a surface - colour detail, normal and roughness,
+    plus how metallic it is - fetching and deriving them the first time and
+    reusing them ever after. Returns None if they cannot be had (offline, say)
     and the model is simply built in flat colour, as it was before.
     """
     options = CURATED.get(material) or CURATED["detail"]
     name = options[seed % len(options)]
     raw = os.path.join(TEXTURE_DIR, "source", name + "S.jpg")
-    ready = os.path.join(TEXTURE_DIR, "detail", "%s_%s.png" % (material, name))
-    if os.path.exists(ready):
-        return ready
+    ready = os.path.join(TEXTURE_DIR, "maps")
+    done = os.path.join(ready, "%s_%sS_detail.png" % (material, name))
+    if os.path.exists(done):
+        return {"detail": done,
+                "normal": done.replace("_detail.png", "_normal.png"),
+                "rough": done.replace("_detail.png", "_rough.png"),
+                "metallic": pbr.SURFACES.get(material, pbr.SURFACES["detail"])[4],
+                "name": "%s_%s" % (material, name)}
     try:
         if not os.path.exists(raw):
             os.makedirs(os.path.dirname(raw), exist_ok=True)
@@ -436,8 +421,9 @@ def texture_for(material, seed=0):
             with urllib.request.urlopen(req, timeout=30) as resp:
                 with open(raw, "wb") as f:
                     f.write(resp.read())
-        low, high = STRENGTH.get(material, STRENGTH["detail"])
-        return _detail_map(raw, ready, low, high)
+        made = pbr.build(raw, material, ready)
+        made["name"] = "%s_%s" % (material, name)
+        return made
     except Exception as exc:                            # noqa: BLE001
         log("texture %s unavailable (%s)" % (material, exc))
         return None
@@ -452,11 +438,31 @@ def texture_set(prompt):
     seed = sum(ord(c) for c in (prompt or ""))
     out, credits = {}, []
     for material in CURATED:
-        path = texture_for(material, seed)
-        if path:
-            out[material] = path
-            credits.append(os.path.splitext(os.path.basename(path))[0])
+        maps = texture_for(material, seed)
+        if maps:
+            out[material] = maps
+            credits.append(maps["name"])
     return out, credits
+
+
+
+# --------------------------------------------------------------------------
+# lighting
+#
+# Three lamps in a void is what a 3D program looks like. A room full of light
+# is what a photograph looks like - so the viewport is lit by a real
+# environment, and the model is lit by the same thing from every direction at
+# once. It is the cheapest large step towards something looking real, and it
+# costs nothing: Poly Haven is CC0.
+# --------------------------------------------------------------------------
+
+HDRI_DIR = os.path.join(HERE, "hdri")
+DEFAULT_HDRI = "brown_photostudio_02_1k.hdr"
+
+
+def hdri_path():
+    path = os.path.join(HDRI_DIR, DEFAULT_HDRI)
+    return path if os.path.exists(path) else None
 
 
 
@@ -537,6 +543,12 @@ class Handler(BaseHTTPRequestHandler):
                     "meshy": bool(read_env_key("MESHY_API_KEY"))})
             if route == "/api/clips":
                 return self._json(200, {"clips": self._clips()})
+            if route == "/api/hdri":
+                path = hdri_path()
+                if not path:
+                    return self._json(404, {"error": "no environment map"})
+                with open(path, "rb") as f:
+                    return self._send(200, f.read(), "image/vnd.radiance")
             if route == "/api/palettes":
                 query = (params.get("q") or [""])[0].strip()
                 out = {"moods": palettes.known_moods(),
