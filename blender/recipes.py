@@ -675,9 +675,10 @@ def build_bird(words, scale, bulk, style, extras):
                       [head_r * 0.5 * sx, -0.06 * H - head_r * 0.62,
                        z_head + head_r * 0.2], "#17202a", attach="head",
                       label="eye"))
-        S.append(step("wing.%s" % side, "box",
-                      [0.020 * H, 0.16 * H, 0.085 * H],
-                      [(r_body * 0.74) * sx, 0.02 * H, z_body + 0.01 * H], pal["light"],
+        # an ellipsoid, not a box - a flat plate cannot sit against a round body
+        S.append(step("wing.%s" % side, "sphere",
+                      [0.045 * H, 0.17 * H, 0.11 * H],
+                      [(r_body * 0.82) * sx, 0.02 * H, z_body + 0.01 * H], pal["light"],
                       bone=bone("wing.%s" % side,
                                 [r_body * 0.8 * sx, 0, z_body + 0.08 * H],
                                 [(r_body + 0.30 * H) * sx, 0, z_body + 0.02 * H],
@@ -692,8 +693,8 @@ def build_bird(words, scale, bulk, style, extras):
         S.append(step("foot.%s" % side, "box",
                       [0.025 * H, 0.055 * H, 0.013 * H],
                       [0.09 * H * sx, -0.02 * H, 0.015 * H], accent, label="foot"))
-    S.append(step("tail", "box", [0.08 * H, 0.11 * H, 0.015 * H],
-                  [0, 0.28 * H, z_body + 0.02 * H], pal["light"],
+    S.append(step("tail", "box", [0.085 * H, 0.13 * H, 0.014 * H],
+                  [0, 0.26 * H, z_body + 0.12 * H], pal["light"], rot=(-0.55, 0, 0),
                   bone=bone("tail", [0, r_body * 0.8, z_body],
                             [0, 0.40 * H, z_body + 0.04 * H], "hips"),
                   label="tail"))
@@ -1216,20 +1217,25 @@ def _p_snowman(s, pal, words, style, bulk):
 def _p_campfire(s, pal, words, style, bulk):
     r = 0.45 * s
     S = []
-    for i in range(6):
-        a = i * 1.047
+    for i in range(8):
+        a = i * 0.7854
         S.append(step("stone_%02d" % i, "sphere",
-                      [r * 0.18, r * 0.18, r * 0.13],
-                      [_cos(a) * r, _sin(a) * r, r * 0.1], "#8b8f94",
+                      [r * 0.20, r * 0.20, r * 0.15],
+                      [_cos(a) * r, _sin(a) * r, r * 0.11], "#8b8f94",
                       label="stone %d" % (i + 1)))
+    # four logs leaning into each other, wigwam fashion
     for i in range(4):
         a = i * 1.5708 + 0.4
-        S.append(limb("log_%02d" % i, [_cos(a) * r * 0.6, _sin(a) * r * 0.6, 0.02 * s],
-                      [-_cos(a) * r * 0.2, -_sin(a) * r * 0.2, r * 0.5],
-                      0.04 * s, 0.035 * s, pal["body"], None, "log %d" % (i + 1)))
-    S.append(step("flame", "cone", [r * 0.42, r * 0.42, r * 0.7],
-                  [0, 0, r * 0.85], pal["accent"], detail={"emissive": 4.0},
-                  bone=bone("root", [0, 0, 0], [0, 0, r * 2]), label="flame"))
+        S.append(limb("log_%02d" % i,
+                      [_cos(a) * r * 0.62, _sin(a) * r * 0.62, 0.02 * s],
+                      [_cos(a) * r * 0.10, _sin(a) * r * 0.10, r * 0.86],
+                      0.042 * s, 0.032 * s, pal["body"], None, "log %d" % (i + 1)))
+    S.append(step("flame", "cone", [r * 0.30, r * 0.30, r * 0.44],
+                  [0, 0, r * 0.62], pal["accent"], detail={"emissive": 1.8},
+                  bone=bone("root", [0, 0, 0], [0, 0, r * 1.4]), label="flame"))
+    S.append(step("flame_core", "cone", [r * 0.16, r * 0.16, r * 0.26],
+                  [0, 0, r * 0.44], "#f5d76e", detail={"emissive": 2.6},
+                  label="flame core"))
     return S
 
 
