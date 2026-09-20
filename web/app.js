@@ -29,6 +29,16 @@ const EXAMPLES = [
 const MOVES = ['idle', 'walk', 'run', 'jump', 'wave', 'dance', 'attack',
   'punch', 'kick', 'spin', 'crouch', 'sit', 'die', 'cheer', 'fly', 'sneak'];
 
+/* A model is assembled the way a modeller assembles one: the body first, then
+   the face, then what it is wearing, then what it is carrying. The panel names
+   the pass it is on, so the order is something you can watch rather than
+   something you have to take on trust. */
+const STAGE_NAMES = {
+  body: 'Body', face: 'Face', clothing: 'Clothing', armour: 'Armour',
+  gear: 'Gear', detail: 'Details', structure: 'Structure',
+};
+let lastStage = null;
+
 /* ------------------------------------------------------------------ scene */
 
 const canvas = $('view');
@@ -342,7 +352,9 @@ function handle(ev) {
       state.rigged = false;
       $('progress').hidden = false;
       $('bar-fill').style.width = '0%';
-      $('progress-label').textContent = 'planning ' + ev.total + ' parts…';
+      lastStage = null;
+      $('progress-label').textContent = ev.total + ' parts: ' +
+        (ev.stages || []).map((s) => STAGE_NAMES[s] || s).join(' → ');
       $('r-name').textContent = ev.plan.name;
       $('r-bones').textContent = '—';
       logLine('plan: ' + ev.plan.archetype + ', ' + ev.total + ' parts');
@@ -352,7 +364,14 @@ function handle(ev) {
     case 'step': {
       const done = ev.i + 1;
       $('bar-fill').style.width = (done / ev.total * 100) + '%';
-      $('progress-label').textContent = done + ' / ' + ev.total + '  —  ' + ev.label;
+      $('progress-label').innerHTML =
+        '<b>' + (STAGE_NAMES[ev.stage] || ev.stage) + '</b> · ' + ev.label +
+        '<span class="count">' + done + ' / ' + ev.total + '</span>';
+      if (ev.stage !== lastStage) {
+        logLine('— ' + (STAGE_NAMES[ev.stage] || ev.stage));
+        lastStage = ev.stage;
+      }
+      logLine('   ' + ev.label);
       addPart('/session/' + ev.file);
       break;
     }

@@ -146,6 +146,66 @@ def check_parser():
           body["size"][1] > body["size"][0] * 1.4,
           "%.3f deep, %.3f wide" % (body["size"][1], body["size"][0]))
 
+    # a character is assembled from named pieces, not carved as one lump
+    unknown = sorted({m for kit in recipes.KITS.values() for m in kit
+                      if m not in recipes.MODULES})
+    check("every kit names modules that exist", not unknown, str(unknown))
+
+    for prompt, wanted in [
+            ("a knight", ["helmet", "breastplate", "pauldron", "greave",
+                          "gauntlet", "belt", "tassets", "boot"]),
+            ("a wizard", ["robe", "hat", "belt"]),
+            ("a pirate", ["coat", "hat", "belt", "boot"]),
+            ("a farmer", ["tunic", "trouser", "hat", "boot"]),
+            ("a ninja", ["hood", "mask", "tunic", "belt"]),
+            ("a king", ["robe", "crown"]),
+            ("a chef", ["apron", "hat"]),
+            ("a man", ["tunic", "trouser", "boot"]),
+    ]:
+        parts = " ".join(s["part"] for s in
+                         recipes.plan_from_prompt(prompt)["steps"])
+        for piece in wanted:
+            check("%s wears a %s" % (prompt, piece), piece in parts)
+
+    for prompt in ("a skeleton", "a golem", "a doll"):
+        plan = recipes.plan_from_prompt(prompt)
+        dressed = [s["part"] for s in plan["steps"]
+                   if s["stage"] in ("clothing", "armour")]
+        check("%s wears nothing, on purpose" % prompt, not dressed, str(dressed))
+
+    # the pieces go on in the order a modeller would put them on
+    plan = recipes.plan_from_prompt("a knight with a sword")
+    order = plan["stages"]
+    check("the body is built first", order[0] == "body", str(order))
+    check("what it carries goes on last", order[-1] == "gear", str(order))
+    check("the face comes before the armour",
+          order.index("face") < order.index("armour"), str(order))
+
+    # armour is never melted into the body by the sculpt pass
+    soft = {s["part"] for s in plan["steps"] if not s["hard"]}
+    for piece in ("breastplate", "helmet", "pauldron.L", "greave.R"):
+        check("the %s keeps its edges" % piece, piece not in soft)
+
+    # a kit brings its own colours only when the prompt names none
+    steel = recipes.plan_from_prompt("a knight")
+    green = recipes.plan_from_prompt("a green knight")
+    plate = lambda p: next(s["color"] for s in p["steps"]
+                           if s["part"] == "breastplate")
+    check("an unpainted knight is in steel", plate(steel) == "#8f98a3",
+          plate(steel))
+    check("a green knight is green", plate(green) == recipes.COLORS["green"],
+          plate(green))
+
+    # every piece hangs off a bone that exists, or it would not animate
+    for prompt in ("a knight with a sword", "a wizard with a staff", "a pirate",
+                   "a ninja", "an astronaut", "a footballer"):
+        plan = recipes.plan_from_prompt(prompt)
+        names = {s["bone"]["name"] for s in plan["steps"] if s["bone"]}
+        loose = sorted({s["attach"] for s in plan["steps"]
+                        if s.get("attach") and s["attach"] not in names})
+        check("%s: every piece hangs off a real bone" % prompt, not loose,
+              str(loose))
+
     # animation prompts
     for prompt, move, faster in [("walk", "walk", False), ("walk slowly", "walk", False),
                                  ("run fast", "run", True), ("big jump", "jump", False),

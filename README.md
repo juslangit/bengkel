@@ -18,13 +18,28 @@ That is the whole command. It opens at `http://127.0.0.1:8777`.
 
 ## The four things it does
 
-**1 · Make it.** You write *a tall blue knight with a sword and a cape*. boneka
-reads the words, plans about twenty-five parts, and builds them in Blender one at
-a time. Each finished part is sent straight to the browser, so the model appears
-hips first, then chest, then head, then an arm — you watch it happen rather than
-waiting for a file. Meanwhile the panel on the right goes and finds photographs
-of the real thing, so you can judge the model against a knight rather than
-against what a knight is assumed to look like.
+**1 · Make it.** You write *a knight with a sword*. boneka reads the words,
+works out what a knight is assembled from, and builds it in Blender one piece
+at a time — in the order a modeller would:
+
+```
+Body      pelvis · ribcage · neck · head · deltoid · upper arm · forearm ·
+          hand · thigh · shin · foot
+Face      eye left · eye right
+Armour    breastplate · pauldron · pauldron · gauntlet · gauntlet
+Clothing  belt · buckle
+Armour    tassets · greave · greave
+Clothing  boot · boot
+Armour    helmet · visor slit · nose guard · crest
+Gear      sword grip · cross guard · sword blade · sword tip
+```
+
+Each finished piece is sent straight to the browser as it is made, so you watch
+the thing being assembled rather than waiting for a file. The panel on the right
+meanwhile goes and finds photographs of the real thing, so you can judge the
+model against a knight rather than against what a knight is assumed to look like.
+
+The belt goes on before the tassets because that is the order it goes on.
 
 **1½ · It gets sculpted.** Two things stop it looking like stacked boxes.
 
@@ -90,6 +105,41 @@ skin**. boneka translates the bone names and reads every turn in the source rig'
 own space before writing it into ours, so the two skeletons don't have to agree
 on rest pose or bone length. The result is close rather than exact; that is the
 nature of retargeting.
+
+## What each character is assembled from
+
+A knight is not a blue person. It is a body, and then a breastplate, and then a
+pauldron on each shoulder, gauntlets, a belt, tassets, greaves, boots, a helmet
+and a crest — **each one its own named piece**, fitted over the body underneath
+and tied to the bone it should move with, so the pauldron turns with the
+shoulder and the greave swings with the shin.
+
+There are twenty-six modules and a kit for each kind of character:
+
+| | |
+|---|---|
+| **knight** | breastplate, pauldrons, gauntlets, belt, tassets, greaves, boots, helmet, crest |
+| **wizard · mage · witch** | robe, belt, pointed hat |
+| **pirate** | coat, belt, boots, tricorn, eyepatch |
+| **ninja** | tunic, belt, wrist wraps, boots, hood, face mask |
+| **king · queen** | robe, belt, crown |
+| **farmer** | tunic, trousers, boots, straw hat |
+| **chef** | tunic, apron, chef's hat |
+| **viking** | fur mantle, belt, boots, horned helmet |
+| **astronaut** | tunic, belt, gauntlets, boots, glass helmet dome |
+| **soldier · guard · dwarf · elf · orc · goblin · zombie · pirate · hero · villain · footballer…** | their own |
+| **anyone else** | tunic, trousers, boots — a plain person still gets dressed |
+| **skeleton · golem · doll · puppet** | nothing, on purpose |
+
+Every module is a function of the body it is going onto, so the same helmet fits
+a tall thin figure and a short fat one. Whatever the clothes cover becomes an
+under-layer in a darker shade, so a garment reads as a garment on top of a body
+rather than as a differently shaped body. And if you name no colour, the kit
+brings its own — a knight comes out in steel, a ninja in black, a king in red
+and gold — while *a green knight* is green.
+
+Modules are always left crisp by the sculpt pass. A plate that has been
+remeshed into the chest is no longer a plate.
 
 ## Where the shapes come from
 
@@ -166,7 +216,8 @@ boneka            the launcher - starts the server, opens the browser
 server.py         keeps Blender alive, serves the page, streams progress,
                   and fetches reference photographs from Wikimedia Commons
 blender/
-  recipes.py      words  ->  a build plan        (no Blender needed, so testable)
+  recipes.py      words  ->  a build plan: the body, then the kit it wears
+                  (no Blender needed, so the whole thing is testable)
   build.py        a build plan  ->  geometry, including lofts
   sculpt.py       loose parts   ->  one continuous form
   rig.py          geometry      ->  a skeleton and weights
@@ -175,7 +226,7 @@ blender/
 web/              the page, and three.js kept locally
 animations/       .fbx clips you drop in
 sessions/         everything Blender writes, one folder per run
-tests/check.py    673 checks, parser and real Blender
+tests/check.py    722 checks, parser and real Blender
 ```
 
 The one design decision everything else follows from: **Blender is started once
@@ -199,7 +250,7 @@ which is the usual reason hand-written rig animation comes out twisted.
 ## Checks
 
 ```
-python3 tests/check.py            # 673 checks, about 30 seconds
+python3 tests/check.py            # 722 checks, about 30 seconds
 python3 tests/check.py --quick    # fewer models
 python3 tests/check.py --parser-only   # no Blender needed
 ```

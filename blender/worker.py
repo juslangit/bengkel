@@ -62,13 +62,15 @@ def cmd_build(msg):
 
     emit("plan", plan={k: v for k, v in plan.items() if k != "steps"},
          total=len(plan["steps"]),
-         parts=[s["label"] for s in plan["steps"]])
+         parts=[s["label"] for s in plan["steps"]],
+         stages=plan.get("stages", []))
 
     def on_step(i, st, obj):
         part_file = out_path("%s_part_%03d.glb" % (tag, i))
         build.export_selection([obj], part_file)
         emit("step", i=i, total=len(plan["steps"]), label=st["label"],
-             part=st["part"], file=rel(part_file), color=st["color"])
+             part=st["part"], file=rel(part_file), color=st["color"],
+             stage=st.get("stage", "body"))
 
     made = build.build_plan(plan, on_step=on_step)
 

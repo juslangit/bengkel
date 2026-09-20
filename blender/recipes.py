@@ -229,13 +229,17 @@ def _subject(words, synonyms, fallback):
 
 
 def step(part, shape, size, loc, color, rot=(0, 0, 0), bone=None, label=None,
-         detail=None, attach=None):
+         detail=None, attach=None, stage="body", hard=None):
     """
     One part of the model.
 
     `bone` makes a new bone and is what makes the auto-rig button exact.
     `attach` names a bone made by some other part, for things that ride along
-    rather than bend - an eye, a hat, a sword in a hand.
+    rather than bend - an eye, a hat, a sword in a hand, a pauldron.
+    `stage` says which pass of the build this part belongs to, so a model is
+    assembled the way a modeller would assemble it: the body first, then the
+    face, then what it is wearing, then what it is carrying.
+    `hard` overrides the sculpt pass's own judgement - armour keeps its edges.
     """
     return {
         "part": part,
@@ -246,6 +250,8 @@ def step(part, shape, size, loc, color, rot=(0, 0, 0), bone=None, label=None,
         "color": color,
         "bone": bone,
         "attach": attach,
+        "stage": stage,
+        "hard": hard,
         "label": label or part.replace("_", " ").replace(".", " "),
         "detail": detail or {},
     }
@@ -310,11 +316,25 @@ def plan_from_prompt(prompt):
     # a blocky model is blocky on purpose, so it is never sculpted
     organic = bool(meta.get("organic")) and final_style != "blocky"
     for st in steps:
-        st["hard"] = (not organic) or _is_accessory(st["part"])
+        if st.get("hard") is None:
+            st["hard"] = (not organic) or _is_accessory(st["part"])
+        elif organic is False:
+            st["hard"] = True
+
+    if archetype == "prop":
+        for st in steps:
+            if st["stage"] == "body":
+                st["stage"] = "structure"
+
+    stages = []
+    for st in steps:
+        if st["stage"] not in stages:
+            stages.append(st["stage"])
 
     return {
         "prompt": prompt,
         "archetype": archetype,
+        "stages": stages,
         "prop": prop,
         "subject": meta.get("subject", archetype),
         "name": _title(words, archetype),
@@ -333,19 +353,21 @@ def plan_from_prompt(prompt):
 # a limb is a tapered tube from one joint to the next
 # --------------------------------------------------------------------------
 
-def limb(part, head, tail, r0, r1, color, bone_def=None, label=None):
+def limb(part, head, tail, r0, r1, color, bone_def=None, label=None,
+         stage="body", attach=None, hard=None):
     """
     A part that runs between two points. The mesh builder works out the
     direction itself, so nothing here has to do trigonometry.
     """
     mid = [(head[i] + tail[i]) / 2.0 for i in range(3)]
     return step(part, "limb", [r0, r1, 0], mid, color, bone=bone_def,
-                label=label, detail={"head": list(head), "tail": list(tail),
-                                     "r0": r0, "r1": r1})
+                label=label, stage=stage, attach=attach, hard=hard,
+                detail={"head": list(head), "tail": list(tail),
+                        "r0": r0, "r1": r1})
 
 
 def loft(part, rings, color, bone_def=None, label=None, segments=None,
-         attach=None):
+         attach=None, stage="body", hard=None):
     """
     A part described by its cross-sections rather than by a primitive.
 
@@ -384,7 +406,7 @@ def loft(part, rings, color, bone_def=None, label=None, segments=None,
     if segments:
         detail["segments"] = segments
     return step(part, "loft", size, centre, color, bone=bone_def, label=label,
-                detail=detail, attach=attach)
+                detail=detail, attach=attach, stage=stage, hard=hard)
 
 
 def _sub(a, b):
@@ -453,13 +475,22 @@ def build_humanoid(words, scale, bulk, style, extras):
                       ("robot", "android", "mech", "golem")) else "round")
     chibi = any(w in words for w in ("chibi", "cute", "toy", "baby", "doll"))
 
-    pal = pick_colors(words, "#4a7ab8", "#d4a017", default_skin="#d9a07a")
+    kit, kit_name = kit_for(words)
+    fallback = KIT_COLOURS.get(kit_name, ("#4a7ab8", "#d4a017"))
+    pal = pick_colors(words, fallback[0], fallback[1], default_skin="#d9a07a")
     body, accent, skin = pal["body"], pal["accent"], pal["skin"]
     is_machine = any(w in words for w in ("robot", "android", "mech", "golem",
                                           "skeleton"))
     if is_machine:
         skin = pal["light"]
-    leg_col = pal["dark"] if is_machine else body
+
+    # what this character is assembled from. Whatever the clothes cover
+    # becomes an under-layer, so the garment reads as a garment on top of a
+    # body rather than as a differently shaped body.
+    dressed_torso = any(m in TORSO_MODULES for m in kit)
+    dressed_legs = any(m in LEG_MODULES for m in kit)
+    under = pal["dark"] if dressed_torso else body
+    leg_col = pal["dark"] if (is_machine or dressed_legs) else body
 
     B = bulk                                   # every girth scales with build
     R = lambda x, y, z, rx, ry=None: ring(x * H, y * H, z * H, rx * H * B,
@@ -481,10 +512,10 @@ def build_humanoid(words, scale, bulk, style, extras):
     ]
 
     S = []
-    S.append(loft("hips", torso[0:5], body,
+    S.append(loft("hips", torso[0:5], under,
                   bone("hips", [0, 0, 0.500 * H], [0, 0, 0.625 * H]),
                   "pelvis"))
-    S.append(loft("chest", torso[3:9], body,
+    S.append(loft("chest", torso[3:9], under,
                   bone("spine", [0, 0, 0.625 * H], [0, 0, 0.833 * H], "hips"),
                   "ribcage"))
     S.append(loft("neck", [R(0, +0.002, 0.828, 0.038),
@@ -514,7 +545,7 @@ def build_humanoid(words, scale, bulk, style, extras):
         tag = lambda n: "%s.%s" % (n, side)
         S.append(step(tag("deltoid"), "sphere",
                       [0.042 * H * B, 0.044 * H * B, 0.045 * H * B],
-                      [0.101 * H * sx, 0.002 * H, 0.816 * H], body,
+                      [0.101 * H * sx, 0.002 * H, 0.816 * H], under,
                       bone=bone(tag("shoulder"), [0.032 * H * sx, 0, 0.834 * H],
                                 [0.100 * H * sx, 0, 0.810 * H], "spine"),
                       label="deltoid"))
@@ -523,7 +554,7 @@ def build_humanoid(words, scale, bulk, style, extras):
             R(0.111 * sx, 0.002, 0.755, 0.036),      # bicep
             R(0.123 * sx, 0.001, 0.688, 0.030),
             R(0.131 * sx, 0.000, 0.632, 0.025),      # elbow
-        ], body, bone(tag("upperarm"), [0.100 * H * sx, 0, 0.810 * H],
+        ], under, bone(tag("upperarm"), [0.100 * H * sx, 0, 0.810 * H],
                       [0.132 * H * sx, 0, 0.625 * H], tag("shoulder")),
             "upper arm"))
         S.append(loft(tag("forearm"), [
@@ -573,8 +604,13 @@ def build_humanoid(words, scale, bulk, style, extras):
 
     head_r = 0.066 * H * head_scale
     z_head = (z_chin + (z_top - z_chin) * 0.45) * H
+    head_taken = any(m in HEAD_MODULES for m in kit)
+
+    # the face goes on before the clothes, the clothes before what it carries
     S += humanoid_extras(extras, words, H, head_r, z_head, 0.150 * H, pal,
-                         style, is_machine)
+                         style, is_machine, head_taken=head_taken)
+    S += dress(Fit(H, B, pal, skin, style, head_scale), kit)
+    S += humanoid_hands(extras, H, pal)
 
     return S, {"rig_profile": "humanoid", "height": H, "style": style,
                "subject": _subject(words, ARCHETYPES["humanoid"], "person"),
@@ -582,7 +618,8 @@ def build_humanoid(words, scale, bulk, style, extras):
 
 
 def humanoid_extras(extras, words, H, head_r, z_head, x_arm, pal, style,
-                    is_machine):
+                    is_machine, head_taken=False):
+    """Eyes, ears, beard and anything the prompt asked to stick on."""
     S = []
     body, accent, dark = pal["body"], pal["accent"], pal["dark"]
     face_y = -head_r * 0.85
@@ -592,20 +629,20 @@ def humanoid_extras(extras, words, H, head_r, z_head, x_arm, pal, style,
             S.append(step("eye.%s" % side, "sphere",
                           [head_r * 0.17] * 3,
                           [head_r * 0.36 * sx, face_y, z_head + head_r * 0.12],
-                          "#17202a", attach="head",
+                          "#17202a", attach="head", stage="face",
                           label="eye %s" % ("left" if side == "L" else "right")))
     if "ears" in extras:
         for side, sx in (("L", 1.0), ("R", -1.0)):
             S.append(step("ear.%s" % side, "sphere",
                           [head_r * 0.16, head_r * 0.3, head_r * 0.32],
                           [head_r * 0.98 * sx, 0, z_head + head_r * 0.05],
-                          pal["skin"], attach="head", label="ear"))
+                          pal["skin"], attach="head", stage="face", label="ear"))
     if "beard" in extras:
         S.append(step("beard", "box",
                       [head_r * 0.7, head_r * 0.5, head_r * 0.7],
                       [0, face_y * 0.7, z_head - head_r * 0.75], "#e8e2d0",
-                      attach="head", label="beard"))
-    if "hat" in extras:
+                      attach="head", stage="face", label="beard"))
+    if "hat" in extras and not head_taken:
         crown = any(w in words for w in ("crown",))
         helmet = any(w in words for w in ("helmet",))
         if crown:
@@ -627,7 +664,7 @@ def humanoid_extras(extras, words, H, head_r, z_head, x_arm, pal, style,
                           [head_r * 1.0, head_r * 1.0, head_r * 1.6],
                           [0, 0, z_head + head_r * 1.7], accent, attach="head",
                           label="hat"))
-    if "horns" in extras:
+    if "horns" in extras and not head_taken:
         for side, sx in (("L", 1.0), ("R", -1.0)):
             S.append(step("horn.%s" % side, "cone",
                           [head_r * 0.22, head_r * 0.22, head_r * 0.8],
@@ -645,12 +682,12 @@ def humanoid_extras(extras, words, H, head_r, z_head, x_arm, pal, style,
     if "cape" in extras:
         S.append(step("cape", "sphere",
                       [0.125 * H, 0.030 * H, 0.215 * H],
-                      [0, 0.095 * H, 0.615 * H], accent, attach="spine",
+                      [0, 0.095 * H, 0.615 * H], accent, attach="spine", stage="clothing",
                       label="cape"))
     if "backpack" in extras:
         S.append(step("backpack", "box",
                       [0.085 * H, 0.05 * H, 0.10 * H],
-                      [0, 0.14 * H, 0.70 * H], dark, attach="spine",
+                      [0, 0.14 * H, 0.70 * H], dark, attach="spine", stage="gear",
                       label="backpack"))
     if "wings" in extras:
         for side, sx in (("L", 1.0), ("R", -1.0)):
@@ -658,7 +695,7 @@ def humanoid_extras(extras, words, H, head_r, z_head, x_arm, pal, style,
                           [0.15 * H, 0.008 * H, 0.11 * H],
                           [0.30 * H * sx, 0.09 * H, 0.74 * H], pal["light"],
                           rot=(0, 0, 0.25 * (1 if sx > 0 else -1)),
-                          attach="spine", label="wing"))
+                          attach="spine", stage="detail", label="wing"))
     if "tail" in extras:
         for i in range(4):
             t = i / 3.0
@@ -666,39 +703,49 @@ def humanoid_extras(extras, words, H, head_r, z_head, x_arm, pal, style,
                           [0.035 * H * (1 - 0.45 * t)] * 3,
                           [0, 0.11 * H + 0.09 * H * i, 0.55 * H - 0.05 * H * i],
                           body, label="tail"))
+    return S
+
+
+def humanoid_hands(extras, H, pal):
+    """What the character is carrying. It goes on last, as it would."""
+    S = []
+    accent, x_arm = pal["accent"], 0.150 * H
     grip_x = -(x_arm + 0.035 * H)          # just outside the right hand
     grip_y = -0.045 * H                    # and a little in front of it
     if "sword" in extras:
         S.append(step("sword_grip", "cylinder",
                       [0.016 * H, 0.016 * H, 0.055 * H],
-                      [grip_x, grip_y, 0.435 * H], "#5a3a22", attach="hand.R",
+                      [grip_x, grip_y, 0.435 * H], "#5a3a22", attach="hand.R", stage="gear",
                       label="sword grip"))
         S.append(step("sword_guard", "box",
                       [0.048 * H, 0.012 * H, 0.010 * H],
-                      [grip_x, grip_y, 0.495 * H], accent, attach="hand.R",
+                      [grip_x, grip_y, 0.495 * H], accent, attach="hand.R", stage="gear",
                       label="cross guard"))
         S.append(step("sword_blade", "box",
                       [0.016 * H, 0.005 * H, 0.185 * H],
-                      [grip_x, grip_y, 0.690 * H], "#c7cdd2", attach="hand.R",
+                      [grip_x, grip_y, 0.690 * H], "#c7cdd2", attach="hand.R", stage="gear",
                       label="sword blade"))
         S.append(step("sword_tip", "cone",
                       [0.016 * H, 0.005 * H, 0.030 * H],
-                      [grip_x, grip_y, 0.905 * H], "#c7cdd2", attach="hand.R",
+                      [grip_x, grip_y, 0.905 * H], "#c7cdd2", attach="hand.R", stage="gear",
                       label="sword tip"))
     if "staff" in extras:
         S.append(step("staff_shaft", "cylinder",
                       [0.013 * H, 0.013 * H, 0.40 * H],
-                      [grip_x, grip_y, 0.40 * H], "#7a5230", attach="hand.R",
+                      [grip_x, grip_y, 0.40 * H], "#7a5230", attach="hand.R", stage="gear",
                       label="staff"))
         S.append(step("staff_gem", "sphere", [0.042 * H] * 3,
-                      [grip_x, grip_y, 0.825 * H], "#1abc9c", attach="hand.R",
+                      [grip_x, grip_y, 0.825 * H], "#1abc9c", attach="hand.R", stage="gear",
                       detail={"emissive": 1.6}, label="staff gem"))
     if "shield" in extras:
         S.append(step("shield", "cylinder",
                       [0.15 * H, 0.15 * H, 0.018 * H],
                       [(x_arm + 0.045 * H), -0.055 * H, 0.60 * H], accent,
-                      rot=(1.5708, 0, 0), attach="forearm.L", label="shield"))
+                      rot=(1.5708, 0, 0), attach="forearm.L", stage="gear",
+                      label="shield"))
     return S
+
+
 
 
 # --------------------------------------------------------------------------
@@ -1537,3 +1584,590 @@ PROPS = {
     "cone": _p_cone, "signpost": _p_signpost, "flag": _p_flag, "well": _p_well,
     "cactus": _p_cactus, "snowman": _p_snowman, "campfire": _p_campfire,
 }
+
+
+# ==========================================================================
+# outfits: a character is assembled, not carved
+#
+# A knight is not a blue person. It is a body, and then a breastplate, and
+# then a pauldron on each shoulder, and then gauntlets, a belt, tassets,
+# greaves, boots and a helmet - each one its own piece, fitted over the body
+# underneath and tied to the bone it should move with.
+#
+# Every module below is a function of the body it is going onto, so the same
+# helmet fits a tall thin figure and a short fat one. Modules are always left
+# crisp by the sculpt pass: a plate that has been remeshed into the chest is
+# no longer a plate.
+# ==========================================================================
+
+# the body's landmarks, as fractions of total height (see build_humanoid)
+Z_ANKLE, Z_KNEE, Z_HIP = 0.045, 0.260, 0.500
+Z_WAIST, Z_CHEST, Z_SHOULDER = 0.625, 0.762, 0.820
+Z_CHIN, Z_TOP = 0.873, 0.998
+X_HIP = 0.055
+
+# where the arm is, at a given height
+_ARM = [(0.810, 0.100, 0.033), (0.625, 0.132, 0.025),
+        (0.500, 0.150, 0.018), (0.406, 0.156, 0.013)]
+
+
+def arm_at(z):
+    """(x offset, radius) of the arm at height z, both as fractions of H."""
+    if z >= _ARM[0][0]:
+        return _ARM[0][1], _ARM[0][2]
+    for (z0, x0, r0), (z1, x1, r1) in zip(_ARM, _ARM[1:]):
+        if z1 <= z <= z0:
+            t = (z0 - z) / (z0 - z1)
+            return x0 + (x1 - x0) * t, r0 + (r1 - r0) * t
+    return _ARM[-1][1], _ARM[-1][2]
+
+
+def leg_at(z):
+    """(x offset, radius) of the leg at height z."""
+    if z >= Z_HIP:
+        return 0.052, 0.060
+    if z >= Z_KNEE:
+        t = (Z_HIP - z) / (Z_HIP - Z_KNEE)
+        return 0.052 + 0.003 * t, 0.060 - 0.022 * t
+    t = max(0.0, min(1.0, (Z_KNEE - z) / (Z_KNEE - Z_ANKLE)))
+    return 0.055 + 0.003 * t, 0.038 - 0.017 * t
+
+
+class Fit(object):
+    """What a module needs to know about the body it is dressing."""
+
+    def __init__(self, H, B, pal, skin, style, head_scale):
+        self.H, self.B, self.pal, self.skin = H, B, pal, skin
+        self.style, self.head_scale = style, head_scale
+        self.main = pal["body"]
+        self.trim = pal["accent"]
+        self.dark = pal["dark"]
+        self.light = pal["light"]
+        self.leather = "#5a3a22"
+        self.cloth = pal["light"]
+
+    def r(self, x, y, z, rx, ry=None):
+        return ring(x * self.H, y * self.H, z * self.H, rx * self.H,
+                    (ry if ry is not None else rx) * self.H)
+
+    def torso_rx(self, z):
+        """Half-width of the torso at a height, so a garment can clear it."""
+        table = [(Z_HIP, 0.077), (0.565, 0.088), (Z_WAIST, 0.071),
+                 (0.695, 0.085), (Z_CHEST, 0.096), (Z_SHOULDER, 0.098)]
+        if z <= table[0][0]:
+            return table[0][1] * self.B
+        for (z0, w0), (z1, w1) in zip(table, table[1:]):
+            if z0 <= z <= z1:
+                t = (z - z0) / (z1 - z0)
+                return (w0 + (w1 - w0) * t) * self.B
+        return table[-1][1] * self.B
+
+    def head(self, t, grow=0.0):
+        """A ring around the head, t running 0 at the chin to 1 at the crown."""
+        s = self.head_scale
+        z = Z_CHIN + (Z_TOP - Z_CHIN) * s * t
+        profile = [(0.00, 0.028, 0.033), (0.17, 0.042, 0.050),
+                   (0.36, 0.048, 0.056), (0.58, 0.049, 0.058),
+                   (0.81, 0.042, 0.048), (1.00, 0.020, 0.024)]
+        rx = ry = 0.0
+        for (t0, x0, y0), (t1, x1, y1) in zip(profile, profile[1:]):
+            if t0 <= t <= t1:
+                k = (t - t0) / (t1 - t0)
+                rx, ry = x0 + (x1 - x0) * k, y0 + (y1 - y0) * k
+                break
+        else:
+            rx, ry = profile[-1][1], profile[-1][2]
+        return z, (rx * s + grow), (ry * s + grow)
+
+
+# --------------------------------------------------------------------------
+# the modules. Each returns a list of parts and is named for what it is.
+# --------------------------------------------------------------------------
+
+def _o_helmet(f, horned=False):
+    S = []
+    rings = []
+    for t, grow in ((0.05, 0.016), (0.22, 0.019), (0.45, 0.019), (0.70, 0.017),
+                    (0.92, 0.012), (1.03, 0.004)):
+        z, rx, ry = f.head(t, grow)
+        rings.append(f.r(0, -0.003, z, rx, ry))
+    S.append(loft("helmet", rings, f.main, attach="head", stage="armour",
+                  hard=True, label="helmet"))
+    z, rx, ry = f.head(0.40, 0.016)
+    S.append(step("visor", "box", [rx * f.H * 0.92, 0.010 * f.H, 0.013 * f.H],
+                  [0, -(ry + 0.004) * f.H, z * f.H], f.dark, attach="head",
+                  stage="armour", hard=True, label="visor slit"))
+    z, rx, ry = f.head(0.30, 0.014)
+    S.append(step("nose_guard", "box",
+                  [0.008 * f.H, 0.012 * f.H, 0.030 * f.H],
+                  [0, -(ry + 0.002) * f.H, z * f.H], f.trim, attach="head",
+                  stage="armour", hard=True, label="nose guard"))
+    if horned:
+        for side, sx in (("L", 1.0), ("R", -1.0)):
+            z, rx, ry = f.head(0.72, 0.012)
+            S.append(step("horn.%s" % side, "cone",
+                          [0.014 * f.H, 0.014 * f.H, 0.055 * f.H],
+                          [rx * f.H * 0.95 * sx, -0.004 * f.H,
+                           (z + 0.030) * f.H], "#e8e2d0",
+                          rot=(0, 0.5 * sx, 0), attach="head", stage="armour",
+                          hard=True, label="helmet horn"))
+    return S
+
+
+def _o_plume(f):
+    """A crest running front to back along the helmet, not a mast."""
+    z, rx, ry = f.head(0.92, 0.012)
+    return [loft("plume", [
+        f.r(0, -(ry * 0.80), z - 0.004, 0.006, 0.010),
+        f.r(0, 0.000, z + 0.022, 0.007, 0.022),
+        f.r(0, (ry * 0.85), z + 0.004, 0.006, 0.012),
+    ], f.trim, attach="head", stage="armour", hard=True, label="crest")]
+
+
+def _o_dome_helmet(f):
+    z, rx, ry = f.head(0.50, 0.026)
+    return [step("dome", "sphere", [rx * f.H, ry * f.H, ry * f.H],
+                 [0, -0.004 * f.H, z * f.H], "#9fd3e8",
+                 detail={"glass": True}, attach="head", stage="gear",
+                 hard=True, label="helmet dome"),
+            step("collar_ring", "torus",
+                 [rx * f.H * 1.02, 0.010 * f.H, rx * f.H],
+                 [0, -0.004 * f.H, (Z_CHIN - 0.004) * f.H], f.light,
+                 attach="head", stage="gear", hard=True, label="neck ring")]
+
+
+def _o_crown(f):
+    S = []
+    z, rx, ry = f.head(0.84, 0.010)
+    S.append(loft("crown", [f.r(0, 0, z, rx, ry),
+                            f.r(0, 0, z + 0.030, rx * 1.04, ry * 1.04)],
+                  "#d4a017", attach="head", stage="clothing", hard=True,
+                  label="crown"))
+    for i in range(6):
+        a = i * 1.047
+        S.append(step("crown_point_%02d" % i, "cone",
+                      [0.009 * f.H, 0.009 * f.H, 0.022 * f.H],
+                      [_cos(a) * rx * f.H, _sin(a) * ry * f.H,
+                       (z + 0.050) * f.H], "#d4a017", attach="head",
+                      stage="clothing", hard=True, label="crown point"))
+    return S
+
+
+def _o_pointed_hat(f, brim=True, colour=None):
+    colour = colour or f.trim
+    S = []
+    z, rx, ry = f.head(0.86, 0.008)
+    if brim:
+        S.append(step("hat_brim", "cylinder",
+                      [rx * f.H * 1.9, ry * f.H * 1.8, 0.006 * f.H],
+                      [0, -0.004 * f.H, z * f.H], colour, attach="head",
+                      stage="clothing", hard=True, label="hat brim"))
+    S.append(loft("hat", [f.r(0, -0.004, z, rx * 1.05, ry * 1.05),
+                          f.r(0, -0.004, z + 0.055, rx * 0.70, ry * 0.70),
+                          f.r(0, -0.002, z + 0.110, rx * 0.34, ry * 0.34),
+                          f.r(0, 0.002, z + 0.155, rx * 0.06, ry * 0.06)],
+                  colour, attach="head", stage="clothing", hard=True,
+                  label="hat"))
+    return S
+
+
+def _o_round_hat(f, colour=None, tall=0.035):
+    colour = colour or f.leather
+    z, rx, ry = f.head(0.84, 0.008)
+    return [step("hat_brim", "cylinder",
+                 [rx * f.H * 1.95, ry * f.H * 1.75, 0.005 * f.H],
+                 [0, -0.004 * f.H, z * f.H], colour, attach="head",
+                 stage="clothing", hard=True, label="hat brim"),
+            loft("hat", [f.r(0, -0.004, z - 0.006, rx * 1.10, ry * 1.10),
+                         f.r(0, -0.004, z + tall * 0.55, rx * 1.06, ry * 1.06),
+                         f.r(0, -0.004, z + tall, rx * 0.98, ry * 0.98),
+                         f.r(0, -0.004, z + tall + 0.010, rx * 0.74, ry * 0.74)],
+                 colour, attach="head", stage="clothing", hard=True,
+                 label="hat")]
+
+
+def _o_chef_hat(f):
+    z, rx, ry = f.head(0.86, 0.010)
+    return [loft("hat", [f.r(0, -0.004, z, rx * 1.05, ry * 1.05),
+                         f.r(0, -0.004, z + 0.022, rx * 1.05, ry * 1.05),
+                         f.r(0, -0.004, z + 0.040, rx * 1.35, ry * 1.35),
+                         f.r(0, -0.004, z + 0.090, rx * 1.30, ry * 1.30),
+                         f.r(0, -0.004, z + 0.105, rx * 0.90, ry * 0.90)],
+                 "#f4f6f7", attach="head", stage="clothing", hard=True,
+                 label="chef's hat")]
+
+
+def _o_hood(f):
+    """
+    Pushed back off the face, so there is still someone inside it. The rings
+    are offset behind the head and the front of the opening is cut away by
+    keeping the lowest ring small and well back.
+    """
+    rings = []
+    for t, grow, back in ((0.02, 0.008, 0.030), (0.28, 0.021, 0.012),
+                          (0.58, 0.022, 0.006), (0.86, 0.019, 0.006),
+                          (1.02, 0.008, 0.010)):
+        z, rx, ry = f.head(t, grow)
+        rings.append(f.r(0, back, z, rx, ry))
+    S = [loft("hood", rings, f.main, attach="head", stage="clothing",
+              hard=True, label="hood")]
+    z, rx, ry = f.head(0.10, 0.022)
+    S.append(loft("hood_shoulders", [
+        f.r(0, 0.004, Z_SHOULDER + 0.010, f.torso_rx(Z_SHOULDER) + 0.022, 0.072),
+        f.r(0, 0.006, 0.856, 0.066, 0.058),
+        f.r(0, 0.010, z, rx * 0.92, ry * 0.92),
+    ], f.main, attach="spine", stage="clothing", hard=True, label="cowl"))
+    return S
+
+
+def _o_mask(f):
+    z, rx, ry = f.head(0.22, 0.012)
+    return [loft("mask", [f.r(0, -0.002, Z_CHIN - 0.004, rx * 0.95, ry * 0.95),
+                          f.r(0, -0.002, z + 0.020, rx, ry),
+                          f.r(0, -0.002, z + 0.046, rx * 1.02, ry * 1.02)],
+                 f.dark, attach="head", stage="clothing", hard=True,
+                 label="face mask")]
+
+
+def _o_eyepatch(f):
+    z, rx, ry = f.head(0.52, 0.012)
+    return [step("eyepatch", "box",
+                 [0.020 * f.H, 0.006 * f.H, 0.018 * f.H],
+                 [0.020 * f.H, -(ry + 0.001) * f.H, z * f.H], "#1d1f21",
+                 attach="head", stage="clothing", hard=True, label="eyepatch"),
+            step("eyepatch_strap", "torus",
+                 [rx * f.H * 1.02, 0.004 * f.H, rx * f.H],
+                 [0, -0.004 * f.H, z * f.H], "#1d1f21", rot=(0.2, 0, 0),
+                 attach="head", stage="clothing", hard=True, label="strap")]
+
+
+def _o_breastplate(f, colour=None, stage="armour"):
+    colour = colour or f.main
+    g = 0.010                                  # how far it stands off the body
+    return [loft("breastplate", [
+        f.r(0, 0.000, Z_WAIST + 0.010, f.torso_rx(Z_WAIST) + g * 0.8, 0.056),
+        f.r(0, 0.002, 0.695, f.torso_rx(0.695) + g, 0.070),
+        f.r(0, 0.006, Z_CHEST, f.torso_rx(Z_CHEST) + g, 0.076),
+        f.r(0, 0.004, Z_SHOULDER, f.torso_rx(Z_SHOULDER) + g * 0.7, 0.068),
+        f.r(0, 0.002, 0.848, 0.062, 0.053),
+    ], colour, attach="spine", stage=stage, hard=True, label="breastplate")]
+
+
+def _o_tunic(f, colour=None, hem=Z_HIP - 0.030, stage="clothing"):
+    colour = colour or f.main
+    g = 0.008
+    S = [loft("tunic", [
+        f.r(0, 0.000, hem, f.torso_rx(max(hem, Z_HIP)) + g * 1.6, 0.066),
+        f.r(0, 0.000, Z_WAIST, f.torso_rx(Z_WAIST) + g, 0.058),
+        f.r(0, 0.002, 0.700, f.torso_rx(0.700) + g, 0.069),
+        f.r(0, 0.006, Z_CHEST, f.torso_rx(Z_CHEST) + g, 0.074),
+        f.r(0, 0.004, Z_SHOULDER + 0.008, f.torso_rx(Z_SHOULDER) + g * 0.6, 0.066),
+        f.r(0, 0.002, 0.850, 0.060, 0.051),
+    ], colour, attach="spine", stage=stage, hard=True, label="tunic")]
+    g2 = 0.009
+    for side, sx in (("L", 1.0), ("R", -1.0)):
+        x0, r0 = arm_at(Z_SHOULDER - 0.010)
+        x1, r1 = arm_at(0.690)
+        S.append(loft("sleeve.%s" % side, [
+            f.r(x0 * sx, 0.002, Z_SHOULDER - 0.006, r0 + g2 * 1.4),
+            f.r(((x0 + x1) / 2) * sx, 0.001, 0.740, (r0 + r1) / 2 + g2),
+            f.r(x1 * sx, 0.000, 0.690, r1 + g2 * 0.8),
+        ], colour, attach="upperarm.%s" % side, stage=stage, hard=True,
+            label="short sleeve"))
+    return S
+
+
+def _o_coat(f, colour=None):
+    colour = colour or f.main
+    g = 0.012
+    S = _o_tunic(f, colour, hem=Z_KNEE + 0.040, stage="clothing")
+    S[0] = dict(S[0], part="coat", label="coat")
+    for side, sx in (("L", 1.0), ("R", -1.0)):
+        x0, r0 = arm_at(Z_SHOULDER - 0.010)
+        x1, r1 = arm_at(0.560)
+        S.append(loft("sleeve.%s" % side, [
+            f.r(x0 * sx, 0.002, Z_SHOULDER - 0.010, r0 + g),
+            f.r(((x0 + x1) / 2) * sx, 0.001, 0.690, (r0 + r1) / 2 + g),
+            f.r(x1 * sx, 0.000, 0.560, r1 + g * 0.8),
+        ], colour, attach="upperarm.%s" % side, stage="clothing", hard=True,
+            label="sleeve"))
+    return S
+
+
+def _o_robe(f, colour=None):
+    colour = colour or f.main
+    g = 0.012
+    S = [loft("robe", [
+        f.r(0, 0.000, Z_ANKLE + 0.015, 0.150, 0.120),
+        f.r(0, 0.000, Z_KNEE, 0.126, 0.104),
+        f.r(0, 0.000, Z_HIP, f.torso_rx(Z_HIP) + 0.030, 0.082),
+        f.r(0, 0.000, Z_WAIST, f.torso_rx(Z_WAIST) + g, 0.060),
+        f.r(0, 0.004, Z_CHEST, f.torso_rx(Z_CHEST) + g, 0.076),
+        f.r(0, 0.004, Z_SHOULDER + 0.008, f.torso_rx(Z_SHOULDER) + g * 0.6, 0.066),
+        f.r(0, 0.002, 0.850, 0.060, 0.051),
+    ], colour, attach="hips", stage="clothing", hard=True, label="robe")]
+    for side, sx in (("L", 1.0), ("R", -1.0)):
+        x0, r0 = arm_at(Z_SHOULDER - 0.010)
+        x1, r1 = arm_at(0.520)
+        S.append(loft("sleeve.%s" % side, [
+            f.r(x0 * sx, 0.002, Z_SHOULDER - 0.010, r0 + g),
+            f.r(((x0 + x1) / 2) * sx, 0.001, 0.670, (r0 + r1) / 2 + g * 1.6),
+            f.r(x1 * sx, 0.000, 0.520, r1 + g * 2.4),
+        ], colour, attach="upperarm.%s" % side, stage="clothing", hard=True,
+            label="wide sleeve"))
+    return S
+
+
+def _o_apron(f):
+    return [loft("apron", [
+        f.r(0, -0.052, Z_KNEE + 0.060, 0.070, 0.006),
+        f.r(0, -0.060, Z_HIP + 0.010, 0.078, 0.006),
+        f.r(0, -0.066, Z_WAIST, 0.062, 0.006),
+        f.r(0, -0.072, Z_CHEST - 0.010, 0.050, 0.006),
+    ], "#f4f6f7", attach="hips", stage="clothing", hard=True, label="apron")]
+
+
+def _o_fur_mantle(f):
+    return [loft("mantle", [
+        f.r(0, 0.004, 0.690, f.torso_rx(0.690) + 0.030, 0.090),
+        f.r(0, 0.006, Z_CHEST, f.torso_rx(Z_CHEST) + 0.034, 0.096),
+        f.r(0, 0.004, Z_SHOULDER + 0.014, f.torso_rx(Z_SHOULDER) + 0.030, 0.084),
+        f.r(0, 0.002, 0.856, 0.070, 0.058),
+    ], "#8b7355", attach="spine", stage="clothing", hard=True,
+        label="fur mantle")]
+
+
+def _o_loincloth(f):
+    return [loft("loincloth", [
+        f.r(0, 0.000, Z_HIP - 0.075, 0.086, 0.062),
+        f.r(0, 0.000, Z_HIP + 0.010, 0.094, 0.068),
+        f.r(0, 0.000, Z_WAIST - 0.020, 0.080, 0.058),
+    ], f.leather, attach="hips", stage="clothing", hard=True,
+        label="loincloth")]
+
+
+def _o_pauldrons(f, colour=None):
+    colour = colour or f.main
+    S = []
+    for side, sx in (("L", 1.0), ("R", -1.0)):
+        S.append(loft("pauldron.%s" % side, [
+            f.r(0.086 * sx, 0.002, 0.846, 0.030, 0.034),
+            f.r(0.104 * sx, 0.002, 0.820, 0.052, 0.055),
+            f.r(0.112 * sx, 0.002, 0.780, 0.050, 0.052),
+            f.r(0.116 * sx, 0.002, 0.752, 0.040, 0.042),
+        ], colour, attach="shoulder.%s" % side, stage="armour", hard=True,
+            label="pauldron"))
+    return S
+
+
+def _o_gauntlets(f, colour=None, label="gauntlet"):
+    colour = colour or f.light
+    S = []
+    for side, sx in (("L", 1.0), ("R", -1.0)):
+        rings = []
+        for z in (0.600, 0.560, 0.520, 0.480, 0.450):
+            x, r = arm_at(z)
+            rings.append(f.r(x * sx, 0.000, z, r + 0.009))
+        S.append(loft("gauntlet.%s" % side, rings, colour,
+                      attach="forearm.%s" % side, stage="armour", hard=True,
+                      label=label))
+    return S
+
+
+def _o_greaves(f, colour=None):
+    colour = colour or f.main
+    S = []
+    for side, sx in (("L", 1.0), ("R", -1.0)):
+        rings = []
+        for z in (0.250, 0.205, 0.140, 0.075):
+            x, r = leg_at(z)
+            rings.append(f.r(x * sx, 0.002, z, r + 0.009))
+        S.append(loft("greave.%s" % side, rings, colour,
+                      attach="shin.%s" % side, stage="armour", hard=True,
+                      label="greave"))
+    return S
+
+
+def _o_boots(f, colour=None, top=0.150):
+    colour = colour or f.leather
+    S = []
+    for side, sx in (("L", 1.0), ("R", -1.0)):
+        rings = []
+        for z in (top, top * 0.62, 0.060):
+            x, r = leg_at(z)
+            rings.append(f.r(x * sx, 0.000, z, r + 0.011))
+        S.append(loft("boot_shaft.%s" % side, rings, colour,
+                      attach="shin.%s" % side, stage="clothing", hard=True,
+                      label="boot"))
+        S.append(loft("boot.%s" % side, [
+            ring(0.058 * f.H * sx, +0.034 * f.H, 0.034 * f.H,
+                 0.026 * f.H, 0.030 * f.H),
+            ring(0.058 * f.H * sx, -0.005 * f.H, 0.028 * f.H,
+                 0.031 * f.H, 0.028 * f.H),
+            ring(0.066 * f.H * sx, -0.050 * f.H, 0.022 * f.H,
+                 0.033 * f.H, 0.023 * f.H),
+            ring(0.076 * f.H * sx, -0.086 * f.H, 0.014 * f.H,
+                 0.027 * f.H, 0.015 * f.H),
+        ], colour, attach="foot.%s" % side, stage="clothing", hard=True,
+            label="boot"))
+    return S
+
+
+def _o_belt(f, colour=None):
+    colour = colour or f.leather
+    w = f.torso_rx(Z_WAIST) + 0.012
+    return [loft("belt", [f.r(0, -0.004, Z_WAIST - 0.022, w, 0.056),
+                          f.r(0, -0.004, Z_WAIST + 0.008, w, 0.058)],
+                 colour, attach="hips", stage="clothing", hard=True,
+                 label="belt"),
+            step("buckle", "box",
+                 [0.020 * f.H, 0.008 * f.H, 0.020 * f.H],
+                 [0, -0.062 * f.H, (Z_WAIST - 0.007) * f.H], "#d4a017",
+                 attach="hips", stage="clothing", hard=True, label="buckle")]
+
+
+def _o_tassets(f, colour=None):
+    colour = colour or f.main
+    return [loft("tassets", [
+        f.r(0, -0.002, Z_WAIST - 0.020, f.torso_rx(Z_WAIST) + 0.014, 0.058),
+        f.r(0, -0.002, Z_HIP + 0.020, 0.098, 0.074),
+        f.r(0, -0.002, Z_HIP - 0.060, 0.108, 0.080),
+    ], colour, attach="hips", stage="armour", hard=True, label="tassets")]
+
+
+def _o_trousers(f, colour=None, hem=0.080):
+    colour = colour or f.dark
+    S = []
+    for side, sx in (("L", 1.0), ("R", -1.0)):
+        rings = []
+        for z in (Z_HIP + 0.010, 0.400, Z_KNEE, 0.170, hem):
+            x, r = leg_at(z)
+            rings.append(f.r(x * sx, 0.000, z, r + 0.010))
+        S.append(loft("trouser.%s" % side, rings, colour,
+                      attach="thigh.%s" % side, stage="clothing", hard=True,
+                      label="trouser leg"))
+    return S
+
+
+def _o_shorts(f, colour=None):
+    return _o_trousers(f, colour, hem=0.330)
+
+
+MODULES = {
+    "helmet": _o_helmet,
+    "horned_helmet": lambda f: _o_helmet(f, horned=True),
+    "plume": _o_plume,
+    "dome_helmet": _o_dome_helmet,
+    "crown": _o_crown,
+    "wizard_hat": lambda f: _o_pointed_hat(f),
+    "witch_hat": lambda f: _o_pointed_hat(f, colour="#2c2440"),
+    "straw_hat": lambda f: _o_round_hat(f, "#d8b25a"),
+    "tricorn": lambda f: _o_round_hat(f, "#2b2b35", tall=0.026),
+    "chef_hat": _o_chef_hat,
+    "hood": _o_hood,
+    "mask": _o_mask,
+    "eyepatch": _o_eyepatch,
+    "breastplate": _o_breastplate,
+    "tunic": _o_tunic,
+    "coat": _o_coat,
+    "robe": _o_robe,
+    "apron": _o_apron,
+    "mantle": _o_fur_mantle,
+    "loincloth": _o_loincloth,
+    "pauldrons": _o_pauldrons,
+    "gauntlets": _o_gauntlets,
+    "wraps": lambda f: _o_gauntlets(f, f.dark, "wrist wrap"),
+    "greaves": _o_greaves,
+    "boots": _o_boots,
+    "short_boots": lambda f: _o_boots(f, top=0.105),
+    "belt": _o_belt,
+    "tassets": _o_tassets,
+    "trousers": _o_trousers,
+    "shorts": _o_shorts,
+}
+
+HEAD_MODULES = {"helmet", "horned_helmet", "dome_helmet", "crown", "wizard_hat",
+                "witch_hat", "straw_hat", "tricorn", "chef_hat", "hood"}
+TORSO_MODULES = {"breastplate", "tunic", "coat", "robe", "mantle"}
+LEG_MODULES = {"trousers", "shorts", "robe", "greaves"}
+
+# What each kind of character is assembled from, in the order it goes on.
+# A plain person still gets dressed; only the things that would not wear
+# clothes are given an empty kit.
+KITS = {
+    "knight": ["breastplate", "pauldrons", "gauntlets", "belt", "tassets",
+               "greaves", "boots", "helmet", "plume"],
+    "paladin": ["breastplate", "pauldrons", "gauntlets", "belt", "tassets",
+                "greaves", "boots", "helmet"],
+    "guard": ["breastplate", "belt", "boots", "helmet"],
+    "soldier": ["tunic", "belt", "boots", "helmet"],
+    "warrior": ["loincloth", "belt", "pauldrons", "short_boots"],
+    "viking": ["mantle", "belt", "boots", "horned_helmet"],
+    "king": ["robe", "belt", "crown"],
+    "queen": ["robe", "crown"],
+    "wizard": ["robe", "belt", "wizard_hat"],
+    "mage": ["robe", "belt", "wizard_hat"],
+    "witch": ["robe", "belt", "witch_hat"],
+    "ninja": ["tunic", "belt", "wraps", "short_boots", "hood", "mask"],
+    "pirate": ["coat", "belt", "boots", "tricorn", "eyepatch"],
+    "astronaut": ["tunic", "belt", "gauntlets", "boots", "dome_helmet"],
+    "farmer": ["tunic", "trousers", "short_boots", "straw_hat"],
+    "chef": ["tunic", "apron", "chef_hat"],
+    "doctor": ["tunic", "coat"],
+    "zombie": ["tunic"],
+    "orc": ["loincloth", "belt", "pauldrons"],
+    "goblin": ["tunic", "belt", "hood"],
+    "elf": ["tunic", "belt", "short_boots"],
+    "dwarf": ["tunic", "belt", "boots", "helmet"],
+    "robot": ["breastplate", "pauldrons"],
+    "android": ["breastplate", "pauldrons"],
+    "mech": ["breastplate", "pauldrons", "greaves"],
+    "hero": ["breastplate", "belt", "boots"],
+    "villain": ["coat", "belt", "boots"],
+    "footballer": ["tunic", "shorts", "short_boots"],
+    "player": ["tunic", "shorts", "short_boots"],
+    "referee": ["tunic", "shorts", "short_boots"],
+    "mascot": ["tunic", "shorts"],
+    # these wear nothing, on purpose
+    "skeleton": [], "golem": [], "alien": [], "doll": [], "puppet": [],
+    "avatar": ["tunic", "trousers", "short_boots"],
+}
+
+# When the prompt names no colour, the kit brings its own: a knight in steel
+# rather than a knight in whatever the default happened to be.
+KIT_COLOURS = {
+    "knight": ("#8f98a3", "#d4a017"), "paladin": ("#c9ced6", "#d4a017"),
+    "guard": ("#7f8c9b", "#a01f2e"), "soldier": ("#5b6b4a", "#3a4433"),
+    "warrior": ("#8b5a2b", "#c0392b"), "viking": ("#7a6a52", "#8f98a3"),
+    "king": ("#8e2b3a", "#d4a017"), "queen": ("#7d3c98", "#d4a017"),
+    "wizard": ("#3b3d8f", "#d4a017"), "mage": ("#2e6fdb", "#9fd3e8"),
+    "witch": ("#3a2b4f", "#7ed321"), "ninja": ("#23262c", "#a01f2e"),
+    "pirate": ("#4a2f23", "#c0392b"), "astronaut": ("#ecf0f1", "#e67e22"),
+    "farmer": ("#6b7a2f", "#8b5a2b"), "chef": ("#f4f6f7", "#c0392b"),
+    "doctor": ("#f4f6f7", "#2e6fdb"), "zombie": ("#5f6b4a", "#3a4433"),
+    "orc": ("#5d7a3f", "#4a3524"), "goblin": ("#6b7a2f", "#4a3524"),
+    "elf": ("#2f6b4f", "#d4a017"), "dwarf": ("#7a4b2a", "#8f98a3"),
+    "hero": ("#2e6fdb", "#d4a017"), "villain": ("#2b2b35", "#7d3c98"),
+    "footballer": ("#c0392b", "#ecf0f1"), "referee": ("#1d1f21", "#f1c40f"),
+}
+
+
+DEFAULT_KIT = ["tunic", "trousers", "short_boots"]
+
+
+def kit_for(words):
+    """The list of pieces this character is assembled from."""
+    for w in words:
+        if w in KITS:
+            return list(KITS[w]), w
+    return list(DEFAULT_KIT), None
+
+
+def dress(fit, kit):
+    """Run each module in turn. One piece, then the next, in the order given."""
+    out = []
+    for name in kit:
+        module = MODULES.get(name)
+        if module:
+            out += module(fit)
+    return out
