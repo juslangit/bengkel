@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Start boneka and open it in the browser.
+#   boneka              normal
+#   boneka --no-browser leave the browser alone
+set -euo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec python3 "$DIR/server.py" "$@"
