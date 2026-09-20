@@ -450,6 +450,22 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.flush()
 
 
+class Server(ThreadingHTTPServer):
+    """
+    The stock server prints a full stack trace when a browser hangs up, which
+    happens every time you reload the page: the live progress connection is a
+    long-lived one, and closing it is a reset from the server's point of view.
+    It is not an error, and printing it as one makes a working tool look broken.
+    """
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        kind = sys.exc_info()[0]
+        if kind in (ConnectionResetError, BrokenPipeError, ConnectionAbortedError):
+            return
+        super().handle_error(request, client_address)
+
+
 def open_server():
     """
     Take the first free port from the usual one upwards, so a second boneka
@@ -458,7 +474,7 @@ def open_server():
     global PORT
     for port in range(PORT, PORT + 10):
         try:
-            httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+            httpd = Server(("127.0.0.1", port), Handler)
         except OSError as exc:
             if exc.errno not in (48, 98):               # in use, macOS / Linux
                 raise
