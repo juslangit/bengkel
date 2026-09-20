@@ -194,3 +194,31 @@ input[type=range] { accent-color: var(--accent); height: 24px; }
   #panel { width: 100%; min-width: 0; height: auto; }
   #stage { height: 62vh; }
 }
+
+
+/* ------------------------------------------------------- reference strip */
+/* Photographs of the real thing, so the model can be judged against it
+   rather than against what a chicken is assumed to look like. */
+
+#reference {
+  position: absolute; top: 18px; right: 18px; width: 232px;
+  padding: 12px; background: rgba(21, 23, 28, 0.86);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--line); border-radius: var(--radius);
+}
+.ref-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 10px; font-size: 13px; color: var(--ink-dim);
+}
+.ref-head b { color: var(--accent-2); font-weight: 650; }
+.ref-strip { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.ref-strip a {
+  display: block; aspect-ratio: 4 / 3; overflow: hidden;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+.ref-strip a:hover { border-color: var(--accent); }
+.ref-strip img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ref-note { margin: 9px 0 0; font-size: 11px; line-height: 1.4; color: #6d7486; }
+#reference.folded .ref-strip, #reference.folded .ref-note { display: none; }
+
+@media (max-width: 1200px) { #reference { width: 170px; } }

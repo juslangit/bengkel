@@ -22,7 +22,16 @@ That is the whole command. It opens at `http://127.0.0.1:8777`.
 reads the words, plans about twenty-five parts, and builds them in Blender one at
 a time. Each finished part is sent straight to the browser, so the model appears
 hips first, then chest, then head, then an arm — you watch it happen rather than
-waiting for a file.
+waiting for a file. Meanwhile the panel on the right goes and finds photographs
+of the real thing, so you can judge the model against a knight rather than
+against what a knight is assumed to look like.
+
+**1½ · It gets sculpted.** A body made of a box, two cylinders and a sphere reads
+as a box, two cylinders and a sphere however carefully they are placed. So once
+the parts are down they are fused: voxel-remeshed into one continuous skin,
+relaxed, and shaded smooth. The seam where an arm meets a shoulder stops being a
+seam. Anything hard-surfaced — a crate, a sword, a deliberately blocky robot —
+is left crisp, because a crate with soft corners is a worse crate.
 
 **2 · Give it bones.** One button. Because boneka built the mesh itself, it
 already knows that *this* is the left forearm and that the elbow is exactly
@@ -76,6 +85,39 @@ own space before writing it into ours, so the two skeletons don't have to agree
 on rest pose or bone length. The result is close rather than exact; that is the
 nature of retargeting.
 
+## Where the shapes come from
+
+Nothing in here was eyeballed. The recipes are written to measured proportions
+and the source is named in the code beside the numbers:
+
+| Subject | What it is built to |
+|---|---|
+| People | the **eight-head canon** — head 1/8 of the height, crotch at 4 heads, shoulders 2⅓ heads across and a third of a head below the chin, arms 3 heads long, elbow at the navel, wrist at the crotch |
+| Four-legged animals | breed-standard **length against shoulder height**, about 10 to 8.5; muzzle 4.5 to the skull's 5.5 |
+| Birds | a chicken measured at **40–60 cm long, 25–37 cm tall, 11.5–18 cm across** — a long narrow thing, not a ball |
+
+The checks enforce them: one of them fails if the figure stops being eight heads
+tall, another if the dog stops being longer than it is tall.
+
+## The sculpt pass, in detail
+
+Headless Blender cannot drive sculpt-mode brushes — they need a viewport — but it
+can drive the thing a sculptor reaches for first, which is the **voxel remesh**.
+Three things have to survive it, and each is handled:
+
+- **Colour.** A remesh keeps one material, so parts are grouped by colour and each
+  group is remeshed on its own. A blue torso and a skin-coloured forearm stay
+  blue and skin-coloured, and the join between them reads as a sleeve.
+- **Weights.** A remesh throws vertex groups away, so they are painted on before
+  and transferred back from the original geometry afterwards. That is what keeps
+  the rig exact rather than guessed.
+- **Thin things.** A voxel grid swallows anything thinner than about two voxels.
+  Those parts are measured and left alone rather than dissolved.
+
+Two masses have to *overlap* for a remesh to blend them — meeting at a plane
+leaves a crease. That is why the pelvis and the ribcage are built taller than
+they strictly need to be.
+
 ## Meshy
 
 If you want a properly textured, organic model rather than a built one, there is
@@ -91,17 +133,19 @@ diffusion.
 
 ```
 boneka            the launcher - starts the server, opens the browser
-server.py         keeps Blender alive, serves the page, streams progress
+server.py         keeps Blender alive, serves the page, streams progress,
+                  and fetches reference photographs from Wikimedia Commons
 blender/
   recipes.py      words  ->  a build plan        (no Blender needed, so testable)
   build.py        a build plan  ->  geometry
-  rig.py          geometry  ->  a skeleton and weights
-  anim.py         a move  ->  keyframes; and .fbx retargeting
+  sculpt.py       loose parts   ->  one continuous form
+  rig.py          geometry      ->  a skeleton and weights
+  anim.py         a move        ->  keyframes; and .fbx retargeting
   worker.py       one long-running Blender, JSON in, JSON out
 web/              the page, and three.js kept locally
 animations/       .fbx clips you drop in
 sessions/         everything Blender writes, one folder per run
-tests/check.py    621 checks, parser and real Blender
+tests/check.py    673 checks, parser and real Blender
 ```
 
 The one design decision everything else follows from: **Blender is started once
@@ -125,7 +169,7 @@ which is the usual reason hand-written rig animation comes out twisted.
 ## Checks
 
 ```
-python3 tests/check.py            # 621 checks, about 20 seconds
+python3 tests/check.py            # 673 checks, about 30 seconds
 python3 tests/check.py --quick    # fewer models
 python3 tests/check.py --parser-only   # no Blender needed
 ```
@@ -133,6 +177,19 @@ python3 tests/check.py --parser-only   # no Blender needed
 The worker checks drive the real Blender exactly as the app does and look at
 what comes back. They have already earned their keep: they caught a crystal and
 a rocket that were half underground, and a chicken whose beak pointed backwards.
+They also hold the proportions to their references, so a figure that stops being
+eight heads tall fails a check rather than merely looking wrong.
+
+What they cannot catch is ugliness. Render the model and look at it — that is
+how the deflated limbs, the crease at the waist and the plank of a cape were
+found, none of which any check would have objected to.
+
+## Reference pictures
+
+Type a prompt and boneka looks the subject up on **Wikimedia Commons** — no key,
+no account, licence shown on every thumbnail. The server fetches them, not the
+page, so the browser never makes a third-party request and the origin rule holds
+for everything on screen. Offline, the panel says so and nothing else changes.
 
 ## Requirements
 

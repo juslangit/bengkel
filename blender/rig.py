@@ -37,6 +37,31 @@ def _closest_bone(point, bones):
     return best
 
 
+def tag_parts_with_bones(meshes, bones):
+    """
+    Put every vertex of every part into the vertex group named after its own
+    bone. Done before the parts are joined, because joining merges groups that
+    share a name - and before any remesh, because a remesh throws them away and
+    they have to be transferred back from here.
+    """
+    known = {b["name"] for b in bones}
+    for obj in meshes:
+        if obj.type != "MESH" or not obj.data.vertices:
+            continue
+        bone_name = obj.get("bk_bone")
+        if bone_name not in known:
+            centre = obj.matrix_world @ (
+                sum((Vector(c) for c in obj.bound_box), Vector()) / 8.0)
+            bone_name = _closest_bone(centre, bones)
+        group = obj.vertex_groups.new(name=bone_name)
+        group.add([v.index for v in obj.data.vertices], 1.0, "REPLACE")
+
+
+def bones_of(plan):
+    return [st["bone"] for st in plan["steps"] if st.get("bone")]
+
+
+
 # --------------------------------------------------------------------------
 # exact rig, from the plan the model was built with
 # --------------------------------------------------------------------------
@@ -50,17 +75,10 @@ def rig_from_plan(plan, smooth_passes=6):
     if not meshes:
         raise RuntimeError("there is no model to rig yet")
 
-    # 1. every part is put into the vertex group of its own bone, before the
-    #    parts are joined, because joining merges groups that share a name
-    known = {b["name"] for b in bones}
-    for obj in meshes:
-        bone_name = obj.get("bk_bone")
-        if bone_name not in known:
-            centre = obj.matrix_world @ (
-                sum((Vector(c) for c in obj.bound_box), Vector()) / 8.0)
-            bone_name = _closest_bone(centre, bones)
-        group = obj.vertex_groups.new(name=bone_name)
-        group.add([v.index for v in obj.data.vertices], 1.0, "REPLACE")
+    # 1. every part goes into the vertex group of its own bone. The sculpt pass
+    #    does this before it remeshes, so anything already painted is left as
+    #    it is - that painting is what survived the remesh.
+    tag_parts_with_bones([o for o in meshes if not o.vertex_groups], bones)
 
     body = _join(meshes, name="%s_mesh" % plan.get("name", "model").replace(" ", "_"))
     arm_obj = _build_armature(bones, name="%s_rig" % plan.get("name", "model").replace(" ", "_"))

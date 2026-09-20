@@ -25,6 +25,7 @@ import anim                                           # noqa: E402
 import build                                          # noqa: E402
 import recipes                                        # noqa: E402
 import rig                                            # noqa: E402
+import sculpt                                         # noqa: E402
 
 MARK = "@@BK@@"
 SESSION = sys.argv[-1] if "--" in sys.argv else os.path.join(HERE, "..", "sessions", "default")
@@ -69,13 +70,26 @@ def cmd_build(msg):
         emit("step", i=i, total=len(plan["steps"]), label=st["label"],
              part=st["part"], file=rel(part_file), color=st["color"])
 
-    build.build_plan(plan, on_step=on_step)
+    made = build.build_plan(plan, on_step=on_step)
+
+    sculpted = False
+    if plan.get("organic"):
+        emit("sculpting", stage="start", total=len(plan["steps"]))
+        # the weights are painted on first, because the remesh throws vertex
+        # groups away and they have to be transferred back from the originals
+        rig.tag_parts_with_bones(made, rig.bones_of(plan))
+        sculpt.fuse(made, plan,
+                    on_progress=lambda i, n, key: emit(
+                        "sculpting", stage="group", i=i, total=n))
+        sculpted = True
+        emit("sculpting", stage="done")
 
     whole = out_path("%s_model.glb" % tag)
     build.export_scene(whole)
     emit("built", file=rel(whole), name=plan["name"], archetype=plan["archetype"],
          height=plan["height"], parts=len(plan["steps"]),
-         triangles=_triangle_count(), rig_profile=plan["rig_profile"])
+         triangles=_triangle_count(), rig_profile=plan["rig_profile"],
+         sculpted=sculpted, subject=plan.get("subject", ""))
 
 
 def cmd_rig(msg):

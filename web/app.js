@@ -207,6 +207,52 @@ function frameModel(force) {
   grid.scale.setScalar(Math.max(1, reach / 2.2));
 }
 
+
+/* --------------------------------------------------------------- reference */
+
+let refFolded = false;
+
+async function showReference(subject) {
+  if (!subject) return;
+  const box = $('reference'), strip = $('ref-strip');
+  $('ref-subject').textContent = subject;
+  strip.innerHTML = '';
+  $('ref-note').textContent = 'looking\u2026';
+  box.hidden = false;
+  try {
+    const res = await fetch('/api/reference?t=' + encodeURIComponent(TOKEN) +
+                            '&q=' + encodeURIComponent(subject));
+    const data = await res.json();
+    if (!data.images || !data.images.length) {
+      $('ref-note').textContent = 'no photographs found for this one';
+      return;
+    }
+    for (const img of data.images) {
+      const a = document.createElement('a');
+      a.href = img.page || '#';
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.title = img.title + (img.licence ? ' \u2014 ' + img.licence : '');
+      const el = document.createElement('img');
+      el.loading = 'lazy';
+      el.alt = img.title;
+      el.src = '/api/reference/image?t=' + encodeURIComponent(TOKEN) +
+               '&u=' + encodeURIComponent(img.thumb);
+      a.appendChild(el);
+      strip.appendChild(a);
+    }
+    $('ref-note').textContent = 'Wikimedia Commons \u2014 click one to open it';
+  } catch (e) {
+    $('ref-note').textContent = 'could not reach Wikimedia (offline?)';
+  }
+}
+
+$('ref-toggle').onclick = () => {
+  refFolded = !refFolded;
+  $('reference').classList.toggle('folded', refFolded);
+  $('ref-toggle').textContent = refFolded ? 'show' : 'hide';
+};
+
 /* ------------------------------------------------------------ server talk */
 
 async function post(path, body) {
@@ -300,6 +346,7 @@ function handle(ev) {
       $('r-name').textContent = ev.plan.name;
       $('r-bones').textContent = '—';
       logLine('plan: ' + ev.plan.archetype + ', ' + ev.total + ' parts');
+      showReference(ev.plan.subject);
       break;
 
     case 'step': {
@@ -310,6 +357,17 @@ function handle(ev) {
       break;
     }
 
+    case 'sculpting':
+      if (ev.stage === 'start') {
+        $('progress-label').textContent =
+          'sculpting \u2014 fusing the parts into one form\u2026';
+        logLine('sculpting: voxel remesh, colour group by colour group');
+      } else if (ev.stage === 'group') {
+        $('progress-label').textContent =
+          'sculpting \u2014 ' + (ev.i + 1) + ' / ' + ev.total;
+      }
+      break;
+
     case 'built':
       state.built = true;
       state.name = ev.name;
@@ -318,8 +376,14 @@ function handle(ev) {
       $('r-parts').textContent = ev.parts + ' parts';
       $('r-tris').textContent = ev.triangles.toLocaleString() + ' triangles';
       $('r-height').textContent = ev.height + ' m tall';
-      logLine('built ' + ev.name + ' (' + ev.triangles + ' triangles)');
-      say('Built. Press Auto-Rig when you like it.', true);
+      logLine('built ' + ev.name + ' (' + ev.triangles + ' triangles' +
+              (ev.sculpted ? ', sculpted' : '') + ')');
+      // the sculpt pass rebuilt the geometry, so swap the streamed parts for
+      // the finished thing rather than leaving the loose pieces on screen
+      loadWhole('/session/' + ev.file);
+      say(ev.sculpted
+        ? 'Built and sculpted. Press Auto-Rig when you like it.'
+        : 'Built. Press Auto-Rig when you like it.', true);
       break;
 
     case 'rigged':

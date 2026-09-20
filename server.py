@@ -27,7 +27,9 @@ import subprocess
 import sys
 import threading
 import time
+import re
 import urllib.error
+import urllib.parse
 import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -197,6 +199,75 @@ def meshy_job(worker, prompt, art_style="realistic"):
 
 
 # --------------------------------------------------------------------------
+# reference pictures - look at the real thing before judging the model
+# --------------------------------------------------------------------------
+
+COMMONS = "https://commons.wikimedia.org/w/api.php"
+IMAGE_HOSTS = ("upload.wikimedia.org", "thumb.wikimedia.org")
+AGENT = "boneka/1.0 (local 3D tool; contact: local user)"
+
+# Commons ranks a chicken egg and a chicken soup as highly as a chicken, so
+# the obvious wrong answers are dropped rather than shown as reference
+UNHELPFUL = ("egg", "soup", "meat", "recipe", "cooked", "roast", "dish",
+             "logo", "map", "coat of arms", "stamp", "flag of", "diagram",
+             "chart", "seal of", "emblem", "skeleton of", "anatomy of",
+             "sign", "icon", "nugget", "curry", "fried")
+
+
+def reference_images(subject, limit=4):
+    """Photographs of the real thing, from Wikimedia Commons. No key needed."""
+    query = urllib.parse.urlencode({
+        "action": "query", "generator": "search",
+        "gsrsearch": "%s filetype:bitmap" % subject,
+        "gsrnamespace": "6", "gsrlimit": str(limit * 4),
+        "prop": "imageinfo", "iiprop": "url|extmetadata",
+        "iiurlwidth": "420", "format": "json",
+    })
+    req = urllib.request.Request(COMMONS + "?" + query,
+                                 headers={"User-Agent": AGENT})
+    with urllib.request.urlopen(req, timeout=12) as resp:
+        data = json.loads(resp.read().decode())
+
+    pages = ((data.get("query") or {}).get("pages") or {}).values()
+    out = []
+    for page in sorted(pages, key=lambda p: p.get("index", 99)):
+        title = page.get("title", "")[5:]          # drop the "File:" prefix
+        lowered = title.lower()
+        if any(word in lowered for word in UNHELPFUL):
+            continue
+        info = (page.get("imageinfo") or [{}])[0]
+        thumb = (info.get("thumburl") or "").split("?")[0]   # drop the tracking tail
+        if not thumb:
+            continue
+        meta = info.get("extmetadata") or {}
+        out.append({
+            "title": os.path.splitext(title)[0].replace("_", " "),
+            "thumb": thumb,
+            "page": info.get("descriptionurl", ""),
+            "licence": (meta.get("LicenseShortName") or {}).get("value", ""),
+            "credit": re.sub(r"<[^>]+>", "",
+                             (meta.get("Artist") or {}).get("value", ""))[:70],
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
+def fetch_thumbnail(url):
+    """
+    Fetched by the server, not the page, so the browser makes no third-party
+    request and the origin rule stays true for everything on screen.
+    """
+    host = urlparse(url).netloc
+    if host not in IMAGE_HOSTS:
+        raise RuntimeError("that is not a Wikimedia image")
+    req = urllib.request.Request(url, headers={"User-Agent": AGENT})
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        return resp.read(), resp.headers.get("Content-Type", "image/jpeg")
+
+
+
+# --------------------------------------------------------------------------
 # http
 # --------------------------------------------------------------------------
 
@@ -273,6 +344,22 @@ class Handler(BaseHTTPRequestHandler):
                     "meshy": bool(read_env_key("MESHY_API_KEY"))})
             if route == "/api/clips":
                 return self._json(200, {"clips": self._clips()})
+            if route == "/api/reference":
+                subject = (params.get("q") or [""])[0].strip()
+                if not subject:
+                    return self._json(400, {"error": "nothing to look up"})
+                try:
+                    return self._json(200, {"subject": subject,
+                                            "images": reference_images(subject)})
+                except Exception as exc:                # noqa: BLE001
+                    return self._json(200, {"subject": subject, "images": [],
+                                            "note": str(exc)})
+            if route == "/api/reference/image":
+                try:
+                    body, ctype = fetch_thumbnail((params.get("u") or [""])[0])
+                except Exception as exc:                # noqa: BLE001
+                    return self._json(400, {"error": str(exc)})
+                return self._send(200, body, ctype)
             if route == "/api/events":
                 return self._events()
         return self._send(404, b"not found", "text/plain")
