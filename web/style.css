@@ -125,7 +125,12 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   background: linear-gradient(90deg, var(--accent), var(--accent-2));
   transition: width 0.12s linear;
 }
-#progress-label { margin: 8px 0 0; font-size: 14px; color: var(--ink-dim); }
+#progress-label {
+  display: flex; align-items: baseline; gap: 7px;
+  margin: 8px 0 0; font-size: 14px; color: var(--ink-dim);
+}
+#progress-label b { color: var(--accent-2); font-weight: 650; }
+#progress-label .count { margin-left: auto; color: #6d7486; white-space: nowrap; }
 
 details#meshy-box { margin-top: 16px; }
 details#meshy-box summary {
