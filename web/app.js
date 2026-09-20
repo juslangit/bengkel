@@ -336,6 +336,55 @@ $('palette-clear').onclick = () => {
   lookUpPalette();
 };
 
+
+/* ------------------------------------------------ the PC's own generator */
+/* An open-weight model on the machine at the academy, reached over Tailscale.
+   It does the one thing a recipe cannot: it has seen a million of these, so
+   it knows what a thing looks like. What comes back is one lump with no named
+   parts, so it goes through the fitted rig rather than the exact one. */
+
+async function checkLocal3d() {
+  try {
+    const r = await fetch('/api/local3d/health?t=' + encodeURIComponent(TOKEN));
+    const d = await r.json();
+    if (!d.configured) {
+      $('local3d-state').textContent =
+        'not set up yet - run tools/hunyuan/install.sh on the PC';
+      return;
+    }
+    if (d.ok === false) {
+      $('local3d-state').textContent = 'the PC is not answering (off, or the ' +
+        'service is not running)';
+      return;
+    }
+    $('local3d').disabled = false;
+    $('local3d-state').textContent = 'the PC is awake' +
+      (d.loaded ? ', model loaded' : ', model loads on first use') +
+      (d.texture ? ', texture on' : '');
+  } catch (e) {
+    $('local3d-state').textContent = 'could not ask the server';
+  }
+}
+
+$('local3d').onclick = async () => {
+  const file = $('local3d-file').files[0];
+  if (!file) { say('Pick a photo first'); return; }
+  const data = await new Promise((done) => {
+    const fr = new FileReader();
+    fr.onload = () => done(fr.result);
+    fr.readAsDataURL(file);
+  });
+  busy('the PC is generating\u2026');
+  logLine('sent ' + file.name + ' to the PC');
+  try {
+    await post('/api/local3d', {
+      image: data,
+      name: file.name.replace(/\.[^.]+$/, '').replace(/[^a-z0-9]+/gi, '_'),
+      texture: $('local3d-texture').checked,
+    });
+  } catch (e) { say(e.message); state.busy = false; refreshButtons(); }
+};
+
 /* ------------------------------------------------------------ server talk */
 
 async function post(path, body) {
@@ -507,6 +556,20 @@ function handle(ev) {
       say('Saved ' + ev.file.split('/').pop() + ' in the session folder', true);
       break;
 
+    case 'local3d':
+      if (ev.stage === 'sending') {
+        setStatus('the PC is generating - a minute or two', 'busy');
+        logLine('the PC is generating');
+      } else if (ev.stage === 'fetching') {
+        setStatus('fetching the mesh from the PC', 'busy');
+        logLine('generated in ' + ev.seconds + 's, fetching');
+      } else if (ev.stage === 'done') {
+        logLine('got ' + ev.file + (ev.textured ? ', textured' : ', untextured'));
+        say('Came back from the PC. Press Auto-Rig \u2014 it will fit a ' +
+            'skeleton, since this one has no named parts.', true);
+      }
+      break;
+
     case 'meshy':
       setStatus('Meshy: ' + ev.stage + (ev.progress ? ' ' + ev.progress + '%' : ''), 'busy');
       $('meshy-state').textContent = 'Meshy: ' + ev.stage;
@@ -668,4 +731,5 @@ for (const move of MOVES) {
   } catch (e) { setStatus('cannot reach the server', 'bad'); }
   refreshButtons();
   connect();
+  checkLocal3d();
 })();

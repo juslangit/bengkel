@@ -447,6 +447,86 @@ def texture_set(prompt):
 
 
 # --------------------------------------------------------------------------
+# the local 3D generator, on the Windows PC
+#
+# The open-weight equivalent of Meshy - Tencent's Hunyuan3D-2 - running on the
+# RTX 3060 at the academy and reached over Tailscale. An image goes over, a
+# textured mesh comes back, and it lands in the same import-and-fit-a-skeleton
+# path that was written for the Meshy button.
+#
+# Two addresses in ~/.claude/.env:
+#   HUNYUAN_URL    http://100.104.28.73:4488
+#   HUNYUAN_TOKEN  printed by serve.py when it starts
+#
+# The PC is at the academy and is often off, so every call here is written to
+# fail quickly and say so rather than to hang.
+# --------------------------------------------------------------------------
+
+def hunyuan_where():
+    url = read_env_key("HUNYUAN_URL")
+    token = read_env_key("HUNYUAN_TOKEN")
+    return (url.rstrip("/") if url else None), token
+
+
+def hunyuan_call(path, payload=None, timeout=20):
+    url, token = hunyuan_where()
+    if not url:
+        raise RuntimeError("no HUNYUAN_URL in ~/.claude/.env - the PC service "
+                           "has not been set up yet")
+    data = json.dumps(payload).encode() if payload is not None else None
+    req = urllib.request.Request(
+        "%s%s" % (url, path), data=data,
+        method="POST" if data else "GET",
+        headers={"Content-Type": "application/json",
+                 "X-Hunyuan-Token": token or ""})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode())
+
+
+def hunyuan_fetch(remote_path, into):
+    url, token = hunyuan_where()
+    req = urllib.request.Request(
+        "%s/file?t=%s&p=%s" % (url, urllib.parse.quote(token or ""),
+                               urllib.parse.quote(remote_path)),
+        headers={"X-Hunyuan-Token": token or ""})
+    with urllib.request.urlopen(req, timeout=180) as resp, open(into, "wb") as f:
+        f.write(resp.read())
+    return into
+
+
+def hunyuan_job(image_b64, name, texture):
+    """
+    Runs on its own thread; progress goes out on the same event stream the
+    rest of the app uses. A generation takes a minute or two on that card.
+    """
+    try:
+        WORKER.publish({"event": "local3d", "stage": "sending"})
+        result = hunyuan_call("/generate", {
+            "image": image_b64, "name": name, "texture": bool(texture),
+            "steps": 30, "resolution": 256}, timeout=900)
+        if result.get("error"):
+            raise RuntimeError(result["error"])
+        WORKER.publish({"event": "local3d", "stage": "fetching",
+                        "seconds": result.get("shape_seconds", 0)
+                        + result.get("texture_seconds", 0)})
+        into = os.path.join(WORKER.session, "local_%s.glb" % name)
+        hunyuan_fetch(result["file"], into)
+        WORKER.publish({"event": "local3d", "stage": "done",
+                        "file": os.path.basename(into),
+                        "textured": result.get("textured", False)})
+        WORKER.send({"cmd": "import", "path": into})
+    except urllib.error.URLError as exc:
+        WORKER.publish({"event": "error",
+                        "message": "cannot reach the PC (%s). Is it on, and is "
+                                   "serve.py running?" % exc.reason})
+        WORKER.publish({"event": "idle", "cmd": "local3d"})
+    except Exception as exc:                            # noqa: BLE001
+        WORKER.publish({"event": "error", "message": "local generator: %s" % exc})
+        WORKER.publish({"event": "idle", "cmd": "local3d"})
+
+
+
+# --------------------------------------------------------------------------
 # lighting
 #
 # Three lamps in a void is what a 3D program looks like. A room full of light
@@ -543,6 +623,17 @@ class Handler(BaseHTTPRequestHandler):
                     "meshy": bool(read_env_key("MESHY_API_KEY"))})
             if route == "/api/clips":
                 return self._json(200, {"clips": self._clips()})
+            if route == "/api/local3d/health":
+                where, _ = hunyuan_where()
+                if not where:
+                    return self._json(200, {"configured": False})
+                try:
+                    state = hunyuan_call("/health", timeout=6)
+                    state["configured"] = True
+                    return self._json(200, state)
+                except Exception as exc:                # noqa: BLE001
+                    return self._json(200, {"configured": True, "ok": False,
+                                            "error": str(exc)})
             if route == "/api/hdri":
                 path = hdri_path()
                 if not path:
@@ -642,6 +733,17 @@ class Handler(BaseHTTPRequestHandler):
                                                      payload.get("style",
                                                                  "realistic")),
                              daemon=True).start()
+            return self._json(200, {"ok": True})
+
+        if url.path == "/api/local3d":
+            image = (payload.get("image") or "").split(",")[-1]
+            if not image:
+                return self._json(400, {"error": "no image"})
+            threading.Thread(
+                target=hunyuan_job,
+                args=(image, payload.get("name", "model"),
+                      payload.get("texture", False)),
+                daemon=True).start()
             return self._json(200, {"ok": True})
 
         if url.path == "/api/meshy/balance":

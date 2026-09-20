@@ -44,6 +44,18 @@
         <div class="bar"><span id="bar-fill"></span></div>
         <p id="progress-label">&nbsp;</p>
       </div>
+      <details id="local3d-box">
+        <summary>Generate from a photo, on the PC</summary>
+        <p class="hint">Tencent's Hunyuan3D-2 running on the RTX&nbsp;3060 at the
+           academy, over Tailscale. Free, unlimited, and it comes back rigged
+           through the same path as anything else.</p>
+        <input id="local3d-file" type="file" accept="image/*">
+        <label class="tick"><input id="local3d-texture" type="checkbox">
+          also paint a texture <span class="soft">(slower, needs 12&nbsp;GB)</span></label>
+        <button id="local3d" class="ghost" disabled>Generate on the PC</button>
+        <p class="hint" id="local3d-state">checking whether the PC is awake&hellip;</p>
+      </details>
+
       <details id="meshy-box">
         <summary>Use Meshy instead (costs credits)</summary>
         <p class="warn">Meshy charges real credits per model. boneka never calls
