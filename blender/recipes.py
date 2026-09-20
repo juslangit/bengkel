@@ -490,8 +490,23 @@ def loft(part, rings, color, bone_def=None, label=None, segments=None,
         if abs(_dot(t, reference)) > 0.985:
             reference = [0.0, 1.0, 0.0]
         ax = _unit(_cross(t, reference)) or [1.0, 0.0, 0.0]
-        ay = _unit(_cross(t, ax)) or [0.0, 1.0, 0.0]
+        ay = _unit(_cross(ax, t)) or [0.0, 1.0, 0.0]      # up, not down
         rx, ry = r["rx"], r.get("ry", r["rx"])
+        shape = r.get("profile")
+        if shape:
+            # a profile need not be centred on the ring, so measure it
+            us = [p[0] for p in shape]
+            vs = [p[1] for p in shape]
+            for axis in range(3):
+                reach_lo = min(u * rx * ax[axis] + v * ry * ay[axis]
+                               for u in (min(us), max(us))
+                               for v in (min(vs), max(vs)))
+                reach_hi = max(u * rx * ax[axis] + v * ry * ay[axis]
+                               for u in (min(us), max(us))
+                               for v in (min(vs), max(vs)))
+                lo[axis] = min(lo[axis], c[axis] + reach_lo)
+                hi[axis] = max(hi[axis], c[axis] + reach_hi)
+            continue
         for axis in range(3):
             # the widest this ring reaches along one world axis
             reach = (rx * ax[axis] ** 2 + ry * ay[axis] ** 2) ** 0.5 if False else \
@@ -525,9 +540,26 @@ def _unit(v):
     return [v[0] / length, v[1] / length, v[2] / length] if length > 1e-12 else None
 
 
-def ring(x, y, z, rx, ry=None):
-    return {"c": [round(x, 5), round(y, 5), round(z, 5)],
-            "rx": round(rx, 5), "ry": round(ry if ry is not None else rx, 5)}
+def ring(x, y, z, rx, ry=None, profile=None):
+    """
+    One cross-section of a loft.
+
+    Without a profile it is an ellipse, which is what a limb or a torso wants.
+    With one it is any closed polygon, given in unit space and scaled by rx and
+    ry - which is how a gabled roof gets made: a triangle run along the ridge,
+    capped at both ends, is exactly a roof with two gable walls.
+    """
+    out = {"c": [round(x, 5), round(y, 5), round(z, 5)],
+           "rx": round(rx, 5), "ry": round(ry if ry is not None else rx, 5)}
+    if profile:
+        out["profile"] = [[round(u, 5), round(v, 5)] for u, v in profile]
+    return out
+
+
+# a triangle standing on its base: the cross-section of a gabled roof
+GABLE = [(-1.0, 0.0), (1.0, 0.0), (0.0, 1.0)]
+# a rectangle, for anything that should stay square in section
+SQUARE = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
 
 
 
@@ -1504,20 +1536,100 @@ def _p_shield(s, pal, words, style, bulk):
 
 
 def _p_house(s, pal, words, style, bulk):
-    w, d, h = 1.6 * s, 1.3 * s, 1.2 * s
-    return [
-        step("walls", "box", [w, d, h / 2], [0, 0, h / 2], pal["body"], label="walls"),
-        step("roof", "cone", [w * 1.25, d * 1.25, h * 0.55], [0, 0, h * 1.05],
-             pal["accent"], detail={"segments": 4}, rot=(0, 0, 0.7854), label="roof"),
-        step("door", "box", [0.22 * s, 0.03 * s, 0.34 * s],
-             [0, -d - 0.01 * s, 0.34 * s], "#6b4423", label="door"),
-        step("window_L", "box", [0.16 * s, 0.03 * s, 0.16 * s],
-             [-w * 0.5, -d - 0.01 * s, h * 0.62], "#9fd3e8", label="window"),
-        step("window_R", "box", [0.16 * s, 0.03 * s, 0.16 * s],
-             [w * 0.5, -d - 0.01 * s, h * 0.62], "#9fd3e8", label="window"),
-        step("chimney", "box", [0.12 * s, 0.12 * s, 0.30 * s],
-             [w * 0.45, d * 0.3, h * 1.15], "#8b5a2b", label="chimney"),
-    ]
+    """
+    A single-storey house at real dimensions: about 7 m across the front,
+    5.5 m deep, walls 2.7 m to the eaves, a gabled roof at a thirty-degree
+    pitch with the ridge running the long way and a 40 cm overhang all round.
+
+    The first version of this was a 3.2 x 2.6 x 1.2 m slab with a pyramid
+    standing in the middle of its roof - the pyramid's base sat *below* the
+    top of the walls, so it read as a hat resting inside a box. Three things
+    fix it and they are all about the roof: it has to be **gabled**, it has to
+    **overhang** the walls, and it has to start **at** the wall top rather than
+    somewhere inside them. Eaves in particular are most of what says "house"
+    rather than "box with a lid" - a roof flush with the wall is a shed.
+    """
+    W, D, H = 3.50 * s, 2.75 * s, 2.70 * s      # half-width, half-depth, height
+    eave = 0.40 * s
+    rise = D * 0.58                              # about a 30 degree pitch
+    plinth = 0.22 * s
+    wall, trim = pal["body"], pal["accent"]
+    frame = _shade(pal["body"], 0.72)
+
+    S = []
+    # a course of stone at the bottom: a wall that meets the ground with no
+    # footing reads as a cardboard cut-out standing on grass
+    S.append(step("plinth", "box", [W + 0.06 * s, D + 0.06 * s, plinth / 2],
+                  [0, 0, plinth / 2], _shade(pal["body"], 0.62),
+                  label="foundation"))
+    S.append(step("walls", "box", [W, D, (H - plinth) / 2],
+                  [0, 0, plinth + (H - plinth) / 2], wall, label="walls"))
+
+    # the gable triangles, in the wall's own colour, tucked inside the eaves
+    for side, sx in (("L", 1.0), ("R", -1.0)):
+        # a shade lower and a shade shallower than the roof, or its apex
+        # pokes through the slope and shows as a sliver of wall on the tiles
+        S.append(loft("gable_%s" % side, [
+            ring((W - 0.02 * s) * sx, 0, H - 0.07 * s, D, rise * 0.96, GABLE),
+            ring((W - 0.16 * s) * sx, 0, H - 0.07 * s, D, rise * 0.96, GABLE),
+        ], wall, label="gable end"))
+
+    # the roof: one triangular prism run along the ridge, overhanging on all
+    # four sides, sitting exactly on the top of the walls
+    S.append(loft("roof", [
+        ring(-(W + eave), 0, H - 0.04 * s, D + eave, rise, GABLE),
+        ring(+(W + eave), 0, H - 0.04 * s, D + eave, rise, GABLE),
+    ], trim, label="roof"))
+    # a ridge cap along the top, so the two slopes meet in something
+    S.append(step("ridge", "box",
+                  [W + eave, 0.07 * s, 0.05 * s], [0, 0, H + rise],
+                  _shade(pal["accent"], 0.78), label="ridge cap"))
+
+    # ---- the front wall: a door with a frame and a step, two framed windows
+    front = -(D + 0.01 * s)
+    dw, dh = 0.46 * s, 1.05 * s
+    S.append(step("door_frame", "box", [dw + 0.09 * s, 0.05 * s, dh + 0.07 * s],
+                  [0, front, plinth + dh], frame, label="door frame"))
+    S.append(step("door", "box", [dw, 0.055 * s, dh],
+                  [0, front - 0.012 * s, plinth + dh], "#6b4423", label="door"))
+    S.append(step("handle", "sphere", [0.035 * s, 0.035 * s, 0.035 * s],
+                  [dw * 0.62, front - 0.055 * s, plinth + dh * 0.95],
+                  "#d4a017", label="door handle"))
+    S.append(step("step", "box", [dw + 0.22 * s, 0.20 * s, plinth / 2],
+                  [0, front - 0.16 * s, plinth / 2],
+                  _shade(pal["body"], 0.62), label="step"))
+
+    for side, sx in (("L", 1.0), ("R", -1.0)):
+        cx = W * 0.56 * sx
+        cz = plinth + 1.30 * s
+        ww, wh = 0.52 * s, 0.58 * s
+        S.append(step("window_frame_%s" % side, "box",
+                      [ww + 0.08 * s, 0.05 * s, wh + 0.08 * s],
+                      [cx, front, cz], frame, label="window frame"))
+        S.append(step("window_%s" % side, "box", [ww, 0.05 * s, wh],
+                      [cx, front - 0.008 * s, cz], "#9fd3e8",
+                      detail={"glass": True}, label="window"))
+        S.append(step("mullion_v_%s" % side, "box",
+                      [0.035 * s, 0.06 * s, wh], [cx, front - 0.020 * s, cz],
+                      frame, label="window bar"))
+        S.append(step("mullion_h_%s" % side, "box",
+                      [ww, 0.06 * s, 0.035 * s], [cx, front - 0.020 * s, cz],
+                      frame, label="window bar"))
+        S.append(step("sill_%s" % side, "box",
+                      [ww + 0.12 * s, 0.10 * s, 0.045 * s],
+                      [cx, front - 0.045 * s, cz - wh - 0.04 * s],
+                      _shade(pal["body"], 0.62), label="window sill"))
+
+    # ---- the chimney, coming up through the roof beside the ridge
+    chx, chy = W * 0.62, D * 0.30
+    through = H + rise * (1.0 - abs(chy) / (D + eave))
+    S.append(step("chimney", "box", [0.26 * s, 0.26 * s, (through + 0.85 * s) / 2],
+                  [chx, chy, (through + 0.85 * s) / 2], _shade(pal["accent"], 0.70),
+                  label="chimney"))
+    S.append(step("chimney_cap", "box", [0.32 * s, 0.32 * s, 0.06 * s],
+                  [chx, chy, through + 0.85 * s], _shade(pal["body"], 0.62),
+                  label="chimney cap"))
+    return S
 
 
 def _p_tower(s, pal, words, style, bulk):

@@ -320,6 +320,43 @@ def check_parser():
     check("the plan lists its surfaces",
           set(knight["surfaces"]) == {s["material"] for s in knight["steps"]})
 
+    # a house is a house, not a box with a lid
+    house = recipes.plan_from_prompt("a house")
+    parts = {s["part"]: s for s in house["steps"]}
+    for needed in ("walls", "roof", "door", "door_frame", "window_L",
+                   "window_frame_L", "sill_L", "chimney", "plinth", "step"):
+        check("a house has a %s" % needed, needed in parts)
+
+    walls, roof = parts["walls"], parts["roof"]
+    wall_top = walls["loc"][2] + walls["size"][2]
+    roof_bottom = roof["loc"][2] - roof["size"][2]
+    check("the roof starts at the top of the walls, not inside them",
+          abs(roof_bottom - wall_top) < 0.25 * house["height"],
+          "roof from %.2f, walls to %.2f" % (roof_bottom, wall_top))
+    check("the roof overhangs the walls",
+          roof["size"][0] > walls["size"][0] and roof["size"][1] > walls["size"][1],
+          "roof %.2fx%.2f vs walls %.2fx%.2f" % (
+              roof["size"][0], roof["size"][1], walls["size"][0], walls["size"][1]))
+    check("the roof is above the walls at its peak",
+          roof["loc"][2] + roof["size"][2] > wall_top)
+    check("the walls are taller than a metre",
+          walls["size"][2] * 2 > 1.0, "%.2f m" % (walls["size"][2] * 2))
+    check("the house is taller than it is half-wide",
+          house["height"] > walls["size"][0], "%.2f vs %.2f" % (
+              house["height"], walls["size"][0]))
+    check("the door reaches the ground",
+          parts["door"]["loc"][2] - parts["door"]["size"][2] < 0.35)
+
+    # a loft can extrude a polygon, which is what made the gabled roof possible
+    gable = recipes.loft("g", [recipes.ring(-1, 0, 0, 2.0, 1.5, recipes.GABLE),
+                               recipes.ring(1, 0, 0, 2.0, 1.5, recipes.GABLE)],
+                         "#ffffff")
+    check("a profiled loft is measured correctly",
+          [round(v, 2) for v in gable["size"]] == [1.0, 2.0, 0.75],
+          str([round(v, 2) for v in gable["size"]]))
+    check("and it is built the right way up",
+          round(gable["loc"][2], 2) == 0.75, str(round(gable["loc"][2], 2)))
+
     # animation prompts
     for prompt, move, faster in [("walk", "walk", False), ("walk slowly", "walk", False),
                                  ("run fast", "run", True), ("big jump", "jump", False),

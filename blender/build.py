@@ -262,6 +262,12 @@ def _make_loft(st, style):
     detail = st["detail"]
     rings = detail["rings"]
     segments = int(detail.get("segments", 20 if style != "blocky" else 8))
+    shaped = [len(r["profile"]) for r in rings if r.get("profile")]
+    if shaped:
+        if len(set(shaped)) != 1 or len(shaped) != len(rings):
+            raise ValueError("%s: a profiled loft needs the same polygon on "
+                             "every ring" % st["part"])
+        segments = shaped[0]
     centres = [Vector(r["c"]) for r in rings]
 
     bm = bmesh.new()
@@ -281,15 +287,26 @@ def _make_loft(st, style):
         reference = Vector((0, 0, 1))
         if abs(tangent.dot(reference)) > 0.985:
             reference = Vector((0, 1, 0))
+        # axis_y is chosen to point up rather than down. Taking it the
+        # other way round is just as valid mathematically and builds a gabled
+        # roof underground, because a profile's "up" is whatever this says.
         axis_x = tangent.cross(reference).normalized()
-        axis_y = tangent.cross(axis_x).normalized()
+        axis_y = axis_x.cross(tangent).normalized()
 
         rx, ry = float(ring["rx"]), float(ring.get("ry", ring["rx"]))
+        shape = ring.get("profile")
         loop = []
-        for s in range(segments):
-            angle = 2.0 * math.pi * s / segments
-            offset = axis_x * (rx * math.cos(angle)) + axis_y * (ry * math.sin(angle))
-            loop.append(bm.verts.new(centre + offset))
+        if shape:
+            # a given polygon, in unit space, scaled onto the ring's frame
+            for u, v in shape:
+                loop.append(bm.verts.new(
+                    centre + axis_x * (u * rx) + axis_y * (v * ry)))
+        else:
+            for s in range(segments):
+                angle = 2.0 * math.pi * s / segments
+                offset = (axis_x * (rx * math.cos(angle))
+                          + axis_y * (ry * math.sin(angle)))
+                loop.append(bm.verts.new(centre + offset))
         loops.append(loop)
 
     for a, b in zip(loops, loops[1:]):
