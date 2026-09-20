@@ -268,6 +268,93 @@ def fetch_thumbnail(url):
 
 
 # --------------------------------------------------------------------------
+# palettes - the built-in moods, plus anything on Lospec
+# --------------------------------------------------------------------------
+
+LOSPEC = "https://lospec.com/palette-list"
+PALETTE_CACHE = os.path.join(HERE, "palettes")
+
+sys.path.insert(0, os.path.join(HERE, "blender"))
+import palette as palettes                                 # noqa: E402
+
+
+def cached_palette(name):
+    path = os.path.join(PALETTE_CACHE, palettes.slug(name) + ".json")
+    if os.path.exists(path):
+        try:
+            return json.load(open(path))
+        except ValueError:
+            return None
+    return None
+
+
+def store_palette(name, data):
+    os.makedirs(PALETTE_CACHE, exist_ok=True)
+    with open(os.path.join(PALETTE_CACHE, palettes.slug(name) + ".json"),
+              "w") as f:
+        json.dump(data, f)
+
+
+def resolve_palette(name):
+    """
+    A built-in mood, something already fetched, or a Lospec palette. Once
+    fetched it is kept on disk, so a palette you have used before keeps
+    working with the network unplugged.
+    """
+    key = palettes.slug(name)
+    if not key:
+        return None
+    if key in palettes.MOODS:
+        return {"name": key, "source": "built in",
+                "colors": palettes.normalise(palettes.MOODS[key])}
+    hit = cached_palette(key)
+    if hit:
+        hit["source"] = "Lospec (cached)"
+        return hit
+
+    req = urllib.request.Request("%s/%s.json" % (LOSPEC, key),
+                                 headers={"User-Agent": AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            raw = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            raise RuntimeError(
+                "no palette called %r - try one of %s, or search Lospec"
+                % (name, ", ".join(palettes.known_moods()[:4])))
+        raise RuntimeError("Lospec said %s" % exc.code)
+    except urllib.error.URLError:
+        raise RuntimeError("cannot reach Lospec - offline? the built-in "
+                           "palettes still work")
+    colors = palettes.normalise(raw.get("colors"))
+    if len(colors) < 2:
+        raise RuntimeError("that palette has no colours in it")
+    data = {"name": raw.get("name") or key, "slug": key, "colors": colors,
+            "author": raw.get("author") or "", "source": "Lospec"}
+    store_palette(key, data)
+    return data
+
+
+def search_palettes(query, limit=12):
+    """Lospec's own list, so a name can be found without leaving the app."""
+    params = urllib.parse.urlencode({
+        "colorNumberFilterType": "any", "page": 0,
+        "tag": palettes.slug(query), "sortingType": "default"})
+    req = urllib.request.Request(LOSPEC + "/load?" + params,
+                                 headers={"User-Agent": AGENT})
+    with urllib.request.urlopen(req, timeout=12) as resp:
+        data = json.loads(resp.read().decode())
+    out = []
+    for p in (data.get("palettes") or [])[:limit]:
+        colors = palettes.normalise(p.get("colors"))
+        if len(colors) >= 2:
+            out.append({"name": p.get("title") or p.get("slug"),
+                        "slug": p.get("slug"), "colors": colors})
+    return out
+
+
+
+# --------------------------------------------------------------------------
 # http
 # --------------------------------------------------------------------------
 
@@ -344,6 +431,27 @@ class Handler(BaseHTTPRequestHandler):
                     "meshy": bool(read_env_key("MESHY_API_KEY"))})
             if route == "/api/clips":
                 return self._json(200, {"clips": self._clips()})
+            if route == "/api/palettes":
+                query = (params.get("q") or [""])[0].strip()
+                out = {"moods": palettes.known_moods(),
+                       "cached": sorted(
+                           os.path.splitext(f)[0]
+                           for f in os.listdir(PALETTE_CACHE)
+                           if f.endswith(".json"))
+                       if os.path.isdir(PALETTE_CACHE) else [],
+                       "found": []}
+                if query:
+                    try:
+                        out["found"] = search_palettes(query)
+                    except Exception as exc:            # noqa: BLE001
+                        out["note"] = str(exc)
+                return self._json(200, out)
+            if route == "/api/palette":
+                try:
+                    return self._json(200, resolve_palette(
+                        (params.get("name") or [""])[0]))
+                except Exception as exc:                # noqa: BLE001
+                    return self._json(404, {"error": str(exc)})
             if route == "/api/reference":
                 subject = (params.get("q") or [""])[0].strip()
                 if not subject:
@@ -385,6 +493,15 @@ class Handler(BaseHTTPRequestHandler):
             if cmd not in ("build", "rig", "animate", "clip", "rest", "import",
                            "export", "ping"):
                 return self._json(400, {"error": "unknown command"})
+            if cmd == "build" and payload.get("palette"):
+                # the page names a palette; Blender is handed the colours, so
+                # the worker never has to reach the network
+                try:
+                    found = resolve_palette(payload["palette"])
+                except Exception as exc:                # noqa: BLE001
+                    return self._json(400, {"error": str(exc)})
+                payload = dict(payload, palette=found["colors"],
+                               palette_name=found["name"])
             try:
                 WORKER.send(payload)
             except Exception as exc:                    # noqa: BLE001

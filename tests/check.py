@@ -206,6 +206,72 @@ def check_parser():
         check("%s: every piece hangs off a real bone" % prompt, not loose,
               str(loose))
 
+    # palettes
+    import palette as pal
+    check("black is darker than white in Oklab",
+          pal.oklab("#000000")[0] < pal.oklab("#ffffff")[0])
+    check("junk is dropped from a palette",
+          pal.normalise(["#1a1c2c", "zzz", "abc", "ffcd75", None]) ==
+          ["#1a1c2c", "#ffcd75"])
+    check("a name becomes a slug", pal.slug("Sweetie 16") == "sweetie-16",
+          pal.slug("Sweetie 16"))
+
+    sweetie = ["1a1c2c", "5d275d", "b13e53", "ef7d57", "ffcd75", "a7f070",
+               "38b764", "257179", "29366f", "3b5dc9", "41a6f6", "73eff7",
+               "f4f4f4", "94b0c2", "566c86", "333c57"]
+    for name, colors in [(m, pal.MOODS[m]) for m in pal.known_moods()] + \
+            [("sweetie-16", sweetie)]:
+        plan = recipes.plan_from_prompt("a knight with a sword")
+        before = []
+        for s in plan["steps"]:
+            if s["color"] not in before:
+                before.append(s["color"])
+        mapping = pal.snap_plan(plan["steps"], colors)
+
+        on_palette = set(pal.normalise(colors))
+        used = {s["color"] for s in plan["steps"]}
+        check("%s: every colour is on the palette" % name,
+              used <= on_palette, str(sorted(used - on_palette)))
+        if len(pal.normalise(colors)) >= len(mapping):
+            check("%s: colours stay distinct" % name,
+                  len(set(mapping.values())) == len(mapping),
+                  "%d of %d" % (len(set(mapping.values())), len(mapping)))
+        order = sorted(before, key=lambda c: pal.oklab(c)[0])
+        kept = all(pal.oklab(mapping[a])[0] <= pal.oklab(mapping[b])[0] + 1e-9
+                   for a, b in zip(order, order[1:]))
+        check("%s: the shading order survives" % name, kept)
+
+    plain = recipes.plan_from_prompt("a knight with a sword")
+    moody = recipes.plan_from_prompt("a knight with a sword, pastel")
+    check("a mood named in the prompt is used",
+          moody["palette_name"] == "pastel", moody["palette_name"])
+    check("and it changes the colours",
+          {s["color"] for s in plain["steps"]} !=
+          {s["color"] for s in moody["steps"]})
+    check("without one, nothing is snapped", plain["palette"] == [])
+
+    explicit = recipes.plan_from_prompt("a knight", palette=sweetie)
+    check("a palette passed in is used",
+          {s["color"] for s in explicit["steps"]} <= set(pal.normalise(sweetie)))
+    tiny = recipes.plan_from_prompt("a knight", palette=["#ff0000"])
+    check("a palette of one colour is ignored, not obeyed",
+          len({s["color"] for s in tiny["steps"]}) > 1)
+
+    # a palette smaller than the model shares swatches rather than distorting
+    three = ["#111111", "#888888", "#eeeeee"]
+    plan = recipes.plan_from_prompt("a knight with a sword")
+    was = []
+    for s in plan["steps"]:
+        if s["color"] not in was:
+            was.append(s["color"])
+    got = pal.snap_plan(plan["steps"], three)
+    check("a tiny palette is still obeyed",
+          {s["color"] for s in plan["steps"]} <= set(three))
+    order = sorted(was, key=lambda c: pal.oklab(c)[0])
+    check("and the shading still does not invert",
+          all(pal.oklab(got[a])[0] <= pal.oklab(got[b])[0] + 1e-9
+              for a, b in zip(order, order[1:])))
+
     # animation prompts
     for prompt, move, faster in [("walk", "walk", False), ("walk slowly", "walk", False),
                                  ("run fast", "run", True), ("big jump", "jump", False),

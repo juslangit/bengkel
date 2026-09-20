@@ -263,6 +263,61 @@ $('ref-toggle').onclick = () => {
   $('ref-toggle').textContent = refFolded ? 'show' : 'hide';
 };
 
+
+/* ---------------------------------------------------------------- palette */
+/* A palette is resolved by the server - a built-in mood, something already
+   fetched, or anything on Lospec - and Blender is handed the colours, so the
+   build itself never touches the network. */
+
+function showSwatches(colors) {
+  const box = $('swatches');
+  box.innerHTML = '';
+  if (!colors || !colors.length) { box.hidden = true; return; }
+  for (const c of colors) {
+    const s = document.createElement('span');
+    s.style.background = c;
+    s.title = c;
+    box.appendChild(s);
+  }
+  box.hidden = false;
+}
+
+let paletteTimer = null;
+async function lookUpPalette() {
+  const name = $('palette').value.trim();
+  if (!name) {
+    showSwatches(null);
+    $('palette-note').textContent = 'Everything on the model is built from ' +
+      'one palette, shades included.';
+    return;
+  }
+  $('palette-note').textContent = 'looking up ' + name + '\u2026';
+  try {
+    const res = await fetch('/api/palette?t=' + encodeURIComponent(TOKEN) +
+                            '&name=' + encodeURIComponent(name));
+    const data = await res.json();
+    if (!res.ok) { showSwatches(null); $('palette-note').textContent = data.error; return; }
+    showSwatches(data.colors);
+    $('palette-note').textContent = data.name + ' \u2014 ' + data.colors.length +
+      ' colours, ' + data.source + (data.author ? ', by ' + data.author : '');
+  } catch (e) {
+    showSwatches(null);
+    $('palette-note').textContent = 'could not look that up';
+  }
+}
+
+$('palette').oninput = () => {
+  clearTimeout(paletteTimer);
+  paletteTimer = setTimeout(lookUpPalette, 450);
+};
+$('palette').onkeydown = (e) => {
+  if (e.key === 'Enter') { clearTimeout(paletteTimer); lookUpPalette(); }
+};
+$('palette-clear').onclick = () => {
+  $('palette').value = '';
+  lookUpPalette();
+};
+
 /* ------------------------------------------------------------ server talk */
 
 async function post(path, body) {
@@ -359,6 +414,13 @@ function handle(ev) {
       $('r-bones').textContent = '—';
       logLine('plan: ' + ev.plan.archetype + ', ' + ev.total + ' parts');
       showReference(ev.plan.subject);
+      if (ev.plan.palette && ev.plan.palette.length) {
+        showSwatches(ev.plan.palette);
+        if (ev.plan.palette_name) {
+          $('palette-note').textContent = ev.plan.palette_name +
+            ' \u2014 named in the prompt';
+        }
+      }
       break;
 
     case 'step': {
@@ -466,8 +528,9 @@ function busy(label) {
 
 $('build').onclick = async () => {
   const prompt = $('prompt').value.trim() || $('prompt').placeholder;
+  const palette = $('palette').value.trim();
   busy('building…');
-  try { await send('build', { prompt }); }
+  try { await send('build', palette ? { prompt, palette } : { prompt }); }
   catch (e) { say(e.message); state.busy = false; refreshButtons(); }
 };
 
@@ -571,6 +634,14 @@ for (const move of MOVES) {
         o.value = c; o.textContent = c;
         $('clips').appendChild(o);
       }
+    }
+    const pal = await (await fetch('/api/palettes?t=' +
+                       encodeURIComponent(TOKEN))).json();
+    for (const mood of (pal.moods || []).concat(pal.cached || [])) {
+      const b = document.createElement('button');
+      b.className = 'chip'; b.textContent = mood;
+      b.onclick = () => { $('palette').value = mood; lookUpPalette(); };
+      $('moods').appendChild(b);
     }
     if (!hello.meshy) {
       $('meshy').disabled = true;

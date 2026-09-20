@@ -227,3 +227,26 @@ input[type=range] { accent-color: var(--accent); height: 24px; }
 #reference.folded .ref-strip, #reference.folded .ref-note { display: none; }
 
 @media (max-width: 1200px) { #reference { width: 170px; } }
+
+
+/* ------------------------------------------------------------- palettes */
+/* One palette for the whole model, shades included, so it hangs together
+   instead of being a body colour plus two multiplications. */
+
+.palette-row { margin-top: 16px; }
+.palette-row label {
+  display: block; margin-bottom: 7px; font-size: 14px; color: var(--ink-dim);
+}
+.palette-row label .soft { color: #6d7486; }
+.palette-row .row { margin-top: 0; }
+.palette-row .row input { flex: 3; }
+.palette-row .row button { flex: 0 0 auto; }
+.swatches {
+  display: flex; flex-wrap: wrap; gap: 3px; margin-top: 10px;
+  padding: 7px; background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 9px;
+}
+.swatches span {
+  width: 20px; height: 20px; border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+}

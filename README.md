@@ -134,12 +134,55 @@ There are twenty-six modules and a kit for each kind of character:
 Every module is a function of the body it is going onto, so the same helmet fits
 a tall thin figure and a short fat one. Whatever the clothes cover becomes an
 under-layer in a darker shade, so a garment reads as a garment on top of a body
-rather than as a differently shaped body. And if you name no colour, the kit
+rather than as a differently shaped body. And if you name neither a colour nor a palette, the kit
 brings its own — a knight comes out in steel, a ninja in black, a king in red
 and gold — while *a green knight* is green.
 
 Modules are always left crisp by the sculpt pass. A plate that has been
 remeshed into the chest is no longer a plate.
+
+## Colour: one palette for the whole model
+
+Type a palette name and **every colour on the model comes from it** — body,
+garment, trim and the shades, not just a main colour with two multiplications
+applied to it.
+
+```
+a knight with a sword          palette: sweetie-16
+a pirate                       palette: endesga-32
+a wizard with a staff, pastel
+```
+
+Ten moods are built in and need no network at all — *pastel, muted, earthy,
+neon, monochrome, sunset, forest, ice, rust, candy* — and you can name **any
+palette on [Lospec](https://lospec.com/palette-list)**, which is thousands of
+hand-made ones. A palette is kept on disk after the first fetch, so one you have
+used before still works with the network unplugged. Blender is handed the
+colours, never the name, so the build itself never touches the network.
+
+### Getting the snapping right
+
+Matching is done in **Oklab**, not RGB. Nearest-in-RGB is the obvious way and
+it is wrong: it will swap a mid green for a dark blue because the numbers are
+close, while your eye sees nothing in common.
+
+Two things then have to be true at once, and they pull against each other:
+
+- **distinct** — no two of the model's colours may land on the same swatch, or
+  the model goes flat
+- **in order** — a colour that started darker than another must end darker than
+  it, or the shading inverts and the form reads inside out
+
+Both hold if the model's colours are sorted by lightness, the palette is sorted
+by lightness, and each colour takes a strictly later swatch than the one before.
+That leaves a choice of which swatches to skip, and the choice is made to keep
+the colours as close to the originals as possible — a shortest path over a grid,
+solved exactly rather than guessed at.
+
+Two greedier versions came first and both failed. Nearest-swatch-then-fix kept
+undoing its own de-duplication; a one-pass greedy walk let an early dark colour
+take a light swatch and then ran out of palette. A palette smaller than the
+model shares swatches rather than distorting, and still never inverts.
 
 ## Where the shapes come from
 
@@ -214,10 +257,12 @@ diffusion.
 ```
 boneka            the launcher - starts the server, opens the browser
 server.py         keeps Blender alive, serves the page, streams progress,
-                  and fetches reference photographs from Wikimedia Commons
+                  fetches reference photographs from Wikimedia Commons and
+                  palettes from Lospec, and caches both
 blender/
   recipes.py      words  ->  a build plan: the body, then the kit it wears
                   (no Blender needed, so the whole thing is testable)
+  palette.py      a plan + a palette  ->  the plan, recoloured
   build.py        a build plan  ->  geometry, including lofts
   sculpt.py       loose parts   ->  one continuous form
   rig.py          geometry      ->  a skeleton and weights
@@ -225,8 +270,9 @@ blender/
   worker.py       one long-running Blender, JSON in, JSON out
 web/              the page, and three.js kept locally
 animations/       .fbx clips you drop in
+palettes/         palettes fetched from Lospec, kept for offline use
 sessions/         everything Blender writes, one folder per run
-tests/check.py    722 checks, parser and real Blender
+tests/check.py    765 checks, parser and real Blender
 ```
 
 The one design decision everything else follows from: **Blender is started once
@@ -250,7 +296,7 @@ which is the usual reason hand-written rig animation comes out twisted.
 ## Checks
 
 ```
-python3 tests/check.py            # 722 checks, about 30 seconds
+python3 tests/check.py            # 765 checks, about 30 seconds
 python3 tests/check.py --quick    # fewer models
 python3 tests/check.py --parser-only   # no Blender needed
 ```

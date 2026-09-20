@@ -55,7 +55,7 @@ def rel(path):
 
 def cmd_build(msg):
     prompt = msg.get("prompt", "")
-    plan = recipes.plan_from_prompt(prompt)
+    plan = recipes.plan_from_prompt(prompt, palette=msg.get("palette"))
     STATE.update(plan=plan, rig=None, body=None, anim=None, imported=False)
     STATE["counter"] += 1
     tag = "b%03d" % STATE["counter"]

@@ -14,6 +14,8 @@ single most common thing wrong with a downloaded asset.
 
 import re
 
+import palette as palettes
+
 # --------------------------------------------------------------------------
 # words the parser understands
 # --------------------------------------------------------------------------
@@ -266,7 +268,11 @@ def bone(name, head, tail, parent=None):
 # the main entry point
 # --------------------------------------------------------------------------
 
-def plan_from_prompt(prompt):
+def plan_from_prompt(prompt, palette=None):
+    """
+    `palette` is a list of hex colours to build the whole model from. The
+    prompt can also name one of the built-in moods, which needs no network.
+    """
     words = _words(prompt)
 
     style = _find(words, {k: [k] for k in STYLE_WORDS}) or None
@@ -326,6 +332,12 @@ def plan_from_prompt(prompt):
             if st["stage"] == "body":
                 st["stage"] = "structure"
 
+    # everything on the model goes onto one palette, including the shades,
+    # so it hangs together instead of being a body colour plus two guesses
+    mood = palettes.mood_in(words)
+    chosen = palettes.normalise(palette) or (palettes.MOODS[mood] if mood else [])
+    palette_map = palettes.snap_plan(steps, chosen) if chosen else {}
+
     stages = []
     for st in steps:
         if st["stage"] not in stages:
@@ -335,6 +347,8 @@ def plan_from_prompt(prompt):
         "prompt": prompt,
         "archetype": archetype,
         "stages": stages,
+        "palette": palettes.normalise(chosen),
+        "palette_name": mood or "",
         "prop": prop,
         "subject": meta.get("subject", archetype),
         "name": _title(words, archetype),

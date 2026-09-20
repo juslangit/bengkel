@@ -25,6 +25,20 @@
       <h2><span class="num">1</span> Make it</h2>
       <textarea id="prompt" rows="2" placeholder="a tall blue knight with a sword and a cape"></textarea>
       <div class="chips" id="examples"></div>
+
+      <div class="palette-row">
+        <label for="palette">palette <span class="soft">optional</span></label>
+        <div class="row">
+          <input id="palette" type="text"
+                 placeholder="none — or pastel, sweetie-16, endesga-32">
+          <button id="palette-clear" class="ghost small">clear</button>
+        </div>
+        <div class="chips" id="moods"></div>
+        <div class="swatches" id="swatches" hidden></div>
+        <p class="hint" id="palette-note">Everything on the model is built from
+          one palette, shades included.</p>
+      </div>
+
       <button id="build" class="primary big" disabled>Build</button>
       <div class="progress" id="progress" hidden>
         <div class="bar"><span id="bar-fill"></span></div>
