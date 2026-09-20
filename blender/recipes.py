@@ -219,6 +219,84 @@ def _is_accessory(part):
     return stem in ACCESSORIES or any(part.startswith(a + "_") for a in ACCESSORIES)
 
 
+# --------------------------------------------------------------------------
+# what each part is made of
+#
+# Surfaces are textured by what they are, not by being asked. The mapping is
+# done here by part name rather than by tagging a hundred call sites, so a new
+# recipe gets sensible material for free as long as it names its parts the way
+# everything else does.
+#
+# Anything not listed gets "detail": a faint grunge, multiplied over whatever
+# colour the part already has, so no surface is perfectly flat.
+# --------------------------------------------------------------------------
+
+MATERIALS = {
+    "metal": ("helmet", "visor", "nose_guard", "breastplate", "pauldron",
+              "gauntlet", "greave", "tassets", "crown", "crest", "sword",
+              "axe", "hammer", "shield", "dome", "buckle", "collar_ring",
+              "blade", "guard", "tip", "key", "coin", "rim", "band", "lock",
+              "engine", "antenna", "nail", "housing", "chassis", "cabin",
+              "wheel", "fin", "hull", "turret"),
+    "wood": ("staff", "trunk", "handle", "shaft", "log", "post", "pole",
+             "plank", "rail", "board", "table", "top", "seat", "backrest",
+             "crate", "barrel", "lid", "signpost", "cover", "upright",
+             "stalk", "oar"),
+    "fabric": ("tunic", "robe", "sleeve", "cape", "hood", "cowl", "mask",
+               "mantle", "apron", "loincloth", "flag", "cloth", "pages",
+               "wrap", "trouser", "plume", "cushion"),
+    "leather": ("belt", "boot", "boot_shaft", "backpack", "strap", "eyepatch",
+                "grip", "saddle"),
+    "stone": ("rock", "shard", "crystal", "gem", "stone", "boulder", "well",
+              "roof", "headstone"),
+    "concrete": ("wall", "walls", "tower", "chimney", "cone", "door",
+                 "window", "pavement"),
+    "soil": ("ground", "mound", "dirt", "sand"),
+    # leaves are not made of anything on the site, and must be named here so
+    # a tree's "mostly wood" default does not put plank grain on its canopy
+    "detail": ("canopy", "leaves", "frond", "bush", "flame", "water", "eye",
+               "skin", "cloud", "smoke", "spot"),
+}
+
+DEFAULT_MATERIAL = "detail"
+
+_MATERIAL_BY_WORD = {}
+for _surface, _parts in MATERIALS.items():
+    for _p in _parts:
+        _MATERIAL_BY_WORD.setdefault(_p, _surface)
+
+
+# A prop's own parts are often named too generically to read - a barrel's
+# "body", a crate's "box" - so each prop says what it is mostly made of, and
+# that is used wherever the part name itself gives nothing away.
+PROP_MATERIAL = {
+    "barrel": "wood", "crate": "wood", "chest": "wood", "chair": "wood",
+    "table": "wood", "book": "wood", "signpost": "wood", "barrier": "wood",
+    "torch": "wood", "campfire": "wood", "tree": "wood", "cactus": "wood",
+    "house": "concrete", "tower": "concrete", "lamp": "metal",
+    "well": "stone", "rock": "stone", "crystal": "stone",
+    "sword": "metal", "axe": "metal", "hammer": "metal", "shield": "metal",
+    "staff": "wood", "key": "metal", "coin": "metal", "car": "metal",
+    "rocket": "metal", "flag": "fabric", "ball": "leather",
+}
+
+
+def material_for(part, prop=None):
+    """
+    The surface a part should be textured with: what the part is called, and
+    failing that what the whole object is mostly made of.
+    """
+    stem = part.split(".")[0].rstrip("_0123456789")
+    if stem in _MATERIAL_BY_WORD:
+        return _MATERIAL_BY_WORD[stem]
+    for word, surface in _MATERIAL_BY_WORD.items():
+        if stem.startswith(word) or stem.endswith("_" + word):
+            return surface
+    if prop and prop in PROP_MATERIAL:
+        return PROP_MATERIAL[prop]
+    return DEFAULT_MATERIAL
+
+
 def _subject(words, synonyms, fallback):
     """
     The noun the prompt is really about, so the app can go and find a photo of
@@ -322,6 +400,10 @@ def plan_from_prompt(prompt, palette=None):
     # a blocky model is blocky on purpose, so it is never sculpted
     organic = bool(meta.get("organic")) and final_style != "blocky"
     for st in steps:
+        # only an actual prop lends its material: "a knight with a sword"
+        # sets prop to "sword", and a knight is not made of sword
+        st["material"] = material_for(
+            st["part"], prop if archetype == "prop" else None)
         if st.get("hard") is None:
             st["hard"] = (not organic) or _is_accessory(st["part"])
         elif organic is False:
@@ -342,12 +424,14 @@ def plan_from_prompt(prompt, palette=None):
     for st in steps:
         if st["stage"] not in stages:
             stages.append(st["stage"])
+    surfaces = sorted({st["material"] for st in steps})
 
     return {
         "prompt": prompt,
         "archetype": archetype,
         "stages": stages,
         "palette": palettes.normalise(chosen),
+        "surfaces": surfaces,
         "palette_name": mood or "",
         "prop": prop,
         "subject": meta.get("subject", archetype),

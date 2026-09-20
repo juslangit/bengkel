@@ -355,6 +355,112 @@ def search_palettes(query, limit=12):
 
 
 # --------------------------------------------------------------------------
+# textures, from Texturelabs
+#
+# These are photographs, not PBR material sets - there are no normal or
+# roughness maps - so they are used as a *multiply* over the colour a part
+# already has. The palette still decides the colour; the texture decides that
+# the surface is not perfectly flat. That keeps the two systems from fighting.
+#
+# Licence, which is why nothing here is ever committed: free for commercial
+# use, no credit needed, but not redistributable and not to be shipped inside
+# a 3D model file. https://texturelabs.org/terms/
+# --------------------------------------------------------------------------
+
+TEXTURE_DIR = os.path.join(HERE, "textures")
+TEXTURELABS = "https://texturelabs.org/wp-content/uploads"
+
+# Hand-picked. The site is full of design overlays and decorative tilework
+# alongside the real surfaces - one "brick" turned out to be Moroccan zellij,
+# one "fabric" a photograph of a t-shirt on white - so the ones used here were
+# looked at first rather than taken at random.
+CURATED = {
+    "metal": ["Metal_167", "Metal_131", "Metal_126"],
+    "wood": ["Wood_127", "Wood_162", "Wood_230"],
+    "fabric": ["Fabric_121", "Fabric_181", "Fabric_123"],
+    "leather": ["Wood_253", "Fabric_124", "Metal_257"],
+    "stone": ["Stone_124", "Stone_151", "Stone_126"],
+    "concrete": ["Concrete_143", "Concrete_184", "Concrete_151"],
+    "brick": ["Brick_167"],
+    "soil": ["Soil_126", "Soil_121", "Soil_145"],
+    "detail": ["Grunge_201", "Grunge_328", "Grunge_160"],
+}
+
+# How hard each surface pushes. A multiply of 1.0 leaves the colour alone, so
+# these are the range the grey map is squeezed into: skin and cloth want a
+# whisper, rusted metal and bare soil can take a shove.
+STRENGTH = {
+    "detail": (0.84, 1.05), "fabric": (0.78, 1.06), "leather": (0.68, 1.06),
+    "metal": (0.62, 1.10), "wood": (0.62, 1.08), "stone": (0.60, 1.10),
+    "concrete": (0.68, 1.08), "brick": (0.58, 1.10), "soil": (0.64, 1.08),
+}
+
+
+def _detail_map(source, target, low, high, size=1024):
+    """
+    Turn a photograph into something safe to multiply by: grey, mid-weighted
+    and squeezed into a narrow range. Used at full strength a photograph would
+    replace the colour; the point here is to disturb it, not to bury it.
+    """
+    from PIL import Image, ImageOps                     # system Python has it
+
+    im = Image.open(source).convert("L")
+    im.thumbnail((size, size), Image.LANCZOS)
+    im = ImageOps.autocontrast(im, cutoff=2)
+    span = high - low
+    im = im.point(lambda v: max(0, min(255, int((low + span * (v / 255.0))
+                                                / high * 255))))
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    im.save(target, "PNG", optimize=True)
+    return target
+
+
+def texture_for(material, seed=0):
+    """
+    The detail map for a surface, fetching and preparing it the first time and
+    reusing it ever after. Returns None if it cannot be had - offline, say -
+    and the model is simply built in flat colour, as it was before.
+    """
+    options = CURATED.get(material) or CURATED["detail"]
+    name = options[seed % len(options)]
+    raw = os.path.join(TEXTURE_DIR, "source", name + "S.jpg")
+    ready = os.path.join(TEXTURE_DIR, "detail", "%s_%s.png" % (material, name))
+    if os.path.exists(ready):
+        return ready
+    try:
+        if not os.path.exists(raw):
+            os.makedirs(os.path.dirname(raw), exist_ok=True)
+            req = urllib.request.Request(
+                "%s/Texturelabs_%sS.jpg" % (TEXTURELABS, name),
+                headers={"User-Agent": AGENT})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                with open(raw, "wb") as f:
+                    f.write(resp.read())
+        low, high = STRENGTH.get(material, STRENGTH["detail"])
+        return _detail_map(raw, ready, low, high)
+    except Exception as exc:                            # noqa: BLE001
+        log("texture %s unavailable (%s)" % (material, exc))
+        return None
+
+
+def texture_set(prompt):
+    """
+    One texture per surface, chosen from the prompt so that the same prompt
+    always comes out the same, and two different prompts do not both get the
+    same plank of wood.
+    """
+    seed = sum(ord(c) for c in (prompt or ""))
+    out, credits = {}, []
+    for material in CURATED:
+        path = texture_for(material, seed)
+        if path:
+            out[material] = path
+            credits.append(os.path.splitext(os.path.basename(path))[0])
+    return out, credits
+
+
+
+# --------------------------------------------------------------------------
 # http
 # --------------------------------------------------------------------------
 
@@ -493,6 +599,11 @@ class Handler(BaseHTTPRequestHandler):
             if cmd not in ("build", "rig", "animate", "clip", "rest", "import",
                            "export", "ping"):
                 return self._json(400, {"error": "unknown command"})
+            if cmd == "build" and payload.get("textures", True):
+                # the server fetches and prepares; Blender is handed file
+                # paths, so the worker never reaches the network
+                paths, credits = texture_set(payload.get("prompt", ""))
+                payload = dict(payload, textures=paths, texture_credits=credits)
             if cmd == "build" and payload.get("palette"):
                 # the page names a palette; Blender is handed the colours, so
                 # the worker never has to reach the network

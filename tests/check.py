@@ -272,6 +272,42 @@ def check_parser():
           all(pal.oklab(got[a])[0] <= pal.oklab(got[b])[0] + 1e-9
               for a, b in zip(order, order[1:])))
 
+    # textures: what each part is made of
+    for prompt, part, surface in [
+            ("a knight with a sword", "breastplate", "metal"),
+            ("a knight with a sword", "helmet", "metal"),
+            ("a knight with a sword", "belt", "leather"),
+            ("a wizard with a staff", "robe", "fabric"),
+            ("a wizard with a staff", "staff_shaft", "wood"),
+            ("an oak tree", "trunk", "wood"),
+            ("a house", "walls", "concrete"),
+            ("a crate", "box", "wood"),
+            ("a barrel", "body", "wood"),
+            ("a stone rock", "rock_00", "stone"),
+    ]:
+        plan = recipes.plan_from_prompt(prompt)
+        got = next((s["material"] for s in plan["steps"] if s["part"] == part),
+                   None)
+        check("%s: the %s is %s" % (prompt, part, surface), got == surface,
+              str(got))
+
+    # a tree is mostly wood, but its leaves are not planks
+    tree = recipes.plan_from_prompt("an oak tree")
+    leaves = [s["material"] for s in tree["steps"] if s["part"].startswith("canopy")]
+    check("a tree's canopy is not wood", leaves and "wood" not in leaves,
+          str(leaves))
+
+    # "a knight with a sword" sets prop to sword; a knight is not made of sword
+    knight = recipes.plan_from_prompt("a knight with a sword")
+    body = next(s["material"] for s in knight["steps"] if s["part"] == "chest")
+    check("a prop in the prompt does not re-surface the body",
+          body == "detail", body)
+
+    check("every part has a surface",
+          all(s.get("material") for s in knight["steps"]))
+    check("the plan lists its surfaces",
+          set(knight["surfaces"]) == {s["material"] for s in knight["steps"]})
+
     # animation prompts
     for prompt, move, faster in [("walk", "walk", False), ("walk slowly", "walk", False),
                                  ("run fast", "run", True), ("big jump", "jump", False),

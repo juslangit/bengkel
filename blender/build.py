@@ -43,12 +43,42 @@ def hex_to_rgb(h):
     return lin + [1.0]
 
 
-def material_for(color, detail):
+# Set by the worker before a build: {surface name: path to a detail map}.
+# Empty means no textures were available, and everything is built in flat
+# colour exactly as it was before.
+TEXTURES = {}
+
+
+def _detail_image(material):
+    path = TEXTURES.get(material)
+    if not path or not os.path.exists(path):
+        return None
+    key = "bk_tex_" + material
+    if key in bpy.data.images:
+        return bpy.data.images[key]
+    image = bpy.data.images.load(path, check_existing=True)
+    image.name = key
+    image.colorspace_settings.name = "Non-Color"
+    return image
+
+
+def material_for(color, detail, material="detail"):
+    """
+    Flat colour, with a photograph multiplied over it.
+
+    glTF stores a base colour as a factor times a texture, and Blender's
+    exporter recognises exactly this shape - an image and a constant colour
+    going into a Multiply, then into Base Color - so one greyscale map can be
+    shared by every part that uses that surface while each keeps its own
+    colour. Anything more elaborate in the node tree would not survive export.
+    """
     emissive = float(detail.get("emissive", 0) or 0)
     glass = bool(detail.get("glass"))
-    key = "bk_%s%s%s" % (color.lstrip("#"),
-                         "_e%g" % emissive if emissive else "",
-                         "_glass" if glass else "")
+    image = None if (glass or emissive) else _detail_image(material)
+    key = "bk_%s%s%s%s" % (color.lstrip("#"),
+                           "_e%g" % emissive if emissive else "",
+                           "_glass" if glass else "",
+                           "_" + material if image else "")
     if key in bpy.data.materials:
         return bpy.data.materials[key]
 
@@ -57,6 +87,24 @@ def material_for(color, detail):
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
     rgba = hex_to_rgb(color)
     bsdf.inputs["Base Color"].default_value = rgba
+
+    if image:
+        nodes, links = mat.node_tree.nodes, mat.node_tree.links
+        tex = nodes.new("ShaderNodeTexImage")
+        tex.image = image
+        tex.location = (-620, 260)
+        # ShaderNodeMix, not the legacy ShaderNodeMixRGB: Blender 5's glTF
+        # exporter reads the modern node as baseColorFactor x baseColorTexture
+        # and silently ignores the old one, which loses the colour entirely
+        # and leaves every part the same flat grey.
+        mix = nodes.new("ShaderNodeMix")
+        mix.data_type = "RGBA"
+        mix.blend_type = "MULTIPLY"
+        mix.inputs["Factor"].default_value = 1.0
+        mix.inputs[6].default_value = rgba              # A: the colour
+        mix.location = (-300, 240)
+        links.new(tex.outputs["Color"], mix.inputs[7])  # B: the detail map
+        links.new(mix.outputs[2], bsdf.inputs["Base Color"])
     if "Roughness" in bsdf.inputs:
         bsdf.inputs["Roughness"].default_value = 0.3 if glass else 0.62
     if glass:
@@ -73,7 +121,8 @@ def material_for(color, detail):
 
 def _finish(obj, st, smooth):
     obj.name = st["part"]
-    obj.data.materials.append(material_for(st["color"], st.get("detail") or {}))
+    obj.data.materials.append(material_for(st["color"], st.get("detail") or {},
+                                           st.get("material", "detail")))
     obj["bk_part"] = st["part"]
     if st.get("bone"):
         obj["bk_bone"] = st["bone"]["name"]
@@ -286,6 +335,33 @@ def build_plan(plan, on_step=None):
         if on_step:
             on_step(i, st, obj)
     return made
+
+
+def unwrap(objects):
+    """
+    Give every mesh a UV map. The lofts are built with bmesh and have none;
+    a voxel remesh throws away whatever a mesh had. Smart projection scaled to
+    bounds fits the texture once across each part, which is what these
+    photographs need - they are not tiling materials, so repeating them would
+    show the seam every time.
+    """
+    for obj in objects:
+        if obj.type != "MESH" or not obj.data.polygons:
+            continue
+        bpy.ops.object.select_all(action="DESELECT")
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        try:
+            bpy.ops.object.mode_set(mode="EDIT")
+            bpy.ops.mesh.select_all(action="SELECT")
+            bpy.ops.uv.smart_project(angle_limit=math.radians(66),
+                                     island_margin=0.02,
+                                     scale_to_bounds=True)
+        except RuntimeError:
+            pass
+        finally:
+            if bpy.context.object and bpy.context.object.mode != "OBJECT":
+                bpy.ops.object.mode_set(mode="OBJECT")
 
 
 def export_selection(objects, path, animations=False):

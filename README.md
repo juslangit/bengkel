@@ -184,6 +184,56 @@ undoing its own de-duplication; a one-pass greedy walk let an early dark colour
 take a light swatch and then ran out of palette. A palette smaller than the
 model shares swatches rather than distorting, and still never inverts.
 
+## Surfaces: textures from Texturelabs
+
+Nothing is perfectly flat any more. Every part is given a surface based on what
+it is — metal on armour, wood on a staff or a crate, fabric on a robe, stone on
+a rock, concrete on a wall — and anything unclassified gets a faint grunge, so
+no surface is a plain slab of colour.
+
+The textures come from **[Texturelabs](https://texturelabs.org/)**, free and
+with no account. They are photographs for graphic design, not PBR material
+sets — there are no normal or roughness maps — so they are used as a **multiply
+over the colour a part already has**. The palette still decides the colour; the
+texture decides the surface is not flat. That keeps the two systems from
+fighting each other.
+
+Each source photograph is turned into a grey detail map once — desaturated,
+auto-contrasted, then squeezed into a narrow range around white, per surface,
+because skin and cloth want a whisper where rusted metal and bare soil can take
+a shove. The server fetches and prepares; Blender is handed file paths and
+never touches the network.
+
+A model has no UVs to begin with — the lofts are built with bmesh and the voxel
+remesh throws away whatever a mesh had — so every part is smart-projected and
+scaled to bounds, fitting the texture once across each part. These are not
+tiling materials, so repeating them would show the seam every time.
+
+The ones used are **hand-picked**. The site holds design overlays and
+decorative tilework beside the real surfaces: one "brick" turned out to be
+Moroccan zellij, one "fabric" a photograph of a t-shirt on a white background.
+They were looked at before being chosen.
+
+### What you may do with a textured export
+
+Texturelabs is free for commercial use and asks for no credit, but the terms
+are specific about 3D:
+
+> *Texturelabs resources cannot ... be distributed or sold as part of a 3D
+> model in a way that allows a third party to use, download, extract or access
+> the Texturelabs asset.*
+
+Using one **inside a finished game is explicitly allowed**. Handing someone the
+`.glb` is not. So every textured export writes a `…_TEXTURES.txt` beside it
+naming what is inside and repeating the restriction — the obligation travels
+with the file instead of relying on anyone remembering. **Never commit these
+files, or the `textures/` folder, to a repository.**
+
+There is a `texturelabs` command on the PATH for the same library outside
+boneka: `texturelabs categories`, `texturelabs search wood`,
+`texturelabs pick metal -n 3`. It writes a `SOURCES.md` beside whatever it
+downloads, with the same licence line.
+
 ## Where the shapes come from
 
 Nothing in here was eyeballed. The recipes are written to measured proportions
@@ -257,8 +307,9 @@ diffusion.
 ```
 boneka            the launcher - starts the server, opens the browser
 server.py         keeps Blender alive, serves the page, streams progress,
-                  fetches reference photographs from Wikimedia Commons and
-                  palettes from Lospec, and caches both
+                  fetches reference photographs from Wikimedia Commons,
+                  palettes from Lospec and textures from Texturelabs, and
+                  prepares and caches all three
 blender/
   recipes.py      words  ->  a build plan: the body, then the kit it wears
                   (no Blender needed, so the whole thing is testable)
@@ -271,8 +322,9 @@ blender/
 web/              the page, and three.js kept locally
 animations/       .fbx clips you drop in
 palettes/         palettes fetched from Lospec, kept for offline use
+textures/         textures fetched from Texturelabs - never committed
 sessions/         everything Blender writes, one folder per run
-tests/check.py    765 checks, parser and real Blender
+tests/check.py    779 checks, parser and real Blender
 ```
 
 The one design decision everything else follows from: **Blender is started once
@@ -296,7 +348,7 @@ which is the usual reason hand-written rig animation comes out twisted.
 ## Checks
 
 ```
-python3 tests/check.py            # 765 checks, about 30 seconds
+python3 tests/check.py            # 779 checks, about 30 seconds
 python3 tests/check.py --quick    # fewer models
 python3 tests/check.py --parser-only   # no Blender needed
 ```

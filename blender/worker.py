@@ -55,6 +55,9 @@ def rel(path):
 
 def cmd_build(msg):
     prompt = msg.get("prompt", "")
+    build.TEXTURES = msg.get("textures") or {}
+    STATE["texture_credits"] = msg.get("texture_credits") or []
+    STATE["surfaces"] = []
     plan = recipes.plan_from_prompt(prompt, palette=msg.get("palette"))
     STATE.update(plan=plan, rig=None, body=None, anim=None, imported=False)
     STATE["counter"] += 1
@@ -86,12 +89,19 @@ def cmd_build(msg):
         sculpted = True
         emit("sculpting", stage="done")
 
+    # UVs last: the lofts are built without them and the remesh throws away
+    # whatever was there, so there is no point making them any earlier
+    if build.TEXTURES:
+        build.unwrap([o for o in bpy.context.scene.objects if o.type == "MESH"])
+    STATE["surfaces"] = plan.get("surfaces", [])
+
     whole = out_path("%s_model.glb" % tag)
     build.export_scene(whole)
     emit("built", file=rel(whole), name=plan["name"], archetype=plan["archetype"],
          height=plan["height"], parts=len(plan["steps"]),
          triangles=_triangle_count(), rig_profile=plan["rig_profile"],
-         sculpted=sculpted, subject=plan.get("subject", ""))
+         sculpted=sculpted, subject=plan.get("subject", ""),
+         textured=bool(build.TEXTURES), surfaces=plan.get("surfaces", []))
 
 
 def cmd_rig(msg):
@@ -193,7 +203,39 @@ def cmd_export(msg):
         bpy.ops.wm.save_as_mainfile(filepath=path, copy=True)
     else:
         raise RuntimeError("boneka exports glb, fbx or blend")
-    emit("exported", file=rel(path), format=fmt, animated=animated)
+    # only the surfaces this model actually uses are inside the file
+    surfaces = set(STATE.get("surfaces") or [])
+    credits = [c for c in (STATE.get("texture_credits") or [])
+               if not surfaces or c.split("_")[0] in surfaces]
+    if credits and fmt in ("glb", "fbx"):
+        _write_texture_note(path, credits)
+    emit("exported", file=rel(path), format=fmt, animated=animated,
+         textures=len(credits))
+
+
+def _write_texture_note(model_path, credits):
+    """
+    Texturelabs allows their textures inside a finished game, but not handed
+    on inside a model file where someone could extract them. A file that
+    carries them carries the restriction too, written beside it, rather than
+    relying on anyone remembering.
+    """
+    note = os.path.splitext(model_path)[0] + "_TEXTURES.txt"
+    with open(note, "w") as f:
+        f.write("Textures inside %s\n%s\n\n"
+                % (os.path.basename(model_path), "=" * 60))
+        for name in sorted(set(credits)):
+            surface, _, slug = name.partition("_")
+            f.write("  %-10s Texturelabs %s\n" % (surface, slug))
+        f.write(
+            "\nTexturelabs (https://texturelabs.org/terms/)\n"
+            "  Free for commercial use. No credit required.\n"
+            "  You MAY use this model inside a finished game, film or app.\n"
+            "  You MAY NOT hand this file to anyone else: the terms forbid\n"
+            "  distributing a Texturelabs texture 'as part of a 3D model in a\n"
+            "  way that allows a third party to use, download, extract or\n"
+            "  access' it. Export without textures if you need to share it.\n"
+            "  Do not commit this file to a repository.\n")
 
 
 def cmd_ping(msg):
