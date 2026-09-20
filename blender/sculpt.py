@@ -38,27 +38,27 @@ def fuse(objects, plan, on_progress=None):
         return list(objects)
 
     height = max(plan.get("height", 1.0), 1e-3)
-    voxel = _voxel_size(soft, height)
-
-    # anything the grid would swallow goes back to the hard pile
-    survives, too_thin = [], []
-    for obj in soft:
-        (survives if _thinnest(obj) >= voxel * 2.0 else too_thin).append(obj)
-    soft, hard = survives, hard + too_thin
-    if not soft:
-        return list(objects)
 
     groups = {}
     for obj in soft:
         key = obj.data.materials[0].name if obj.data.materials else "_none"
         groups.setdefault(key, []).append(obj)
 
-    made = []
+    # The grid is sized per colour group, not once for the whole model. One
+    # tiny part - the tip of an ear - used to drag the global voxel size down
+    # until the body was remeshed at a millimetre, which both exploded the
+    # triangle count and left every intersection as a visible crease, because
+    # a grid that fine simply reproduces the parts it was given.
+    made, leftover = [], []
     for i, (key, members) in enumerate(sorted(groups.items())):
         if on_progress:
             on_progress(i, len(groups), key)
-        made.append(_fuse_group(members, voxel))
-    return made + hard
+        voxel = _voxel_size(members, height)
+        survives = [o for o in members if _thinnest(o) >= voxel * 1.6]
+        leftover += [o for o in members if o not in survives]
+        if survives:
+            made.append(_fuse_group(survives, voxel))
+    return made + hard + leftover
 
 
 def _split(objects, plan):
@@ -81,14 +81,21 @@ def _thinnest(obj):
     return min(_dimensions(obj))
 
 
-def _voxel_size(soft, height):
+def _voxel_size(members, height):
     """
-    Fine enough to keep the slimmest limb, coarse enough not to drown the
-    machine. The slimmest limb on a person is the hand, at about four
-    centimetres across.
+    Fine enough to keep the slimmest thing in this group, coarse enough to
+    actually fuse where parts overlap and not to drown the machine.
+
+    The slimmest limb on a person is the hand, at about four centimetres
+    across. The floor of height/220 stops one small part from making the whole
+    group absurdly dense; anything under it is excluded from the group instead
+    and kept as it was built.
     """
-    slimmest = min((_thinnest(o) for o in soft), default=height * 0.05)
-    return max(min(slimmest / 3.0, height / 70.0), height / 400.0, 1e-4)
+    widths = sorted(_thinnest(o) for o in members)
+    slimmest = widths[0] if widths else height * 0.05
+    if len(widths) > 2 and slimmest < height / 60.0:
+        slimmest = widths[1]          # ignore one runt, not the whole spread
+    return max(min(slimmest / 2.6, height / 55.0), height / 200.0, 1e-4)
 
 
 def _fuse_group(members, voxel):
@@ -97,7 +104,7 @@ def _fuse_group(members, voxel):
 
     material = skin.data.materials[0] if skin.data.materials else None
     _voxel_remesh(skin, voxel)
-    _relax(skin, iterations=4, factor=0.55)
+    _relax(skin, iterations=6, factor=0.62)
 
     skin.data.materials.clear()
     if material:

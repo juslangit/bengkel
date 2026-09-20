@@ -106,7 +106,9 @@ def make_part(st, style="round"):
     detail = st.get("detail") or {}
     segments = int(detail.get("segments", 0) or 0)
 
-    if shape == "limb":
+    if shape == "loft":
+        obj = _make_loft(st, style)
+    elif shape == "limb":
         obj = _make_limb(st, style)
     elif shape in ("box", "capsule") or (style == "blocky" and shape in ("sphere",)):
         bpy.ops.mesh.primitive_cube_add(size=2, location=loc)
@@ -159,6 +161,74 @@ def make_part(st, style="round"):
     if any(rot):
         obj.rotation_euler = rot
     return obj
+
+
+def _make_loft(st, style):
+    """
+    A form built as a stack of cross-sections, the way a figure is constructed
+    on paper: ribcage oval, waist narrowing, pelvis; or shoulder, bicep swell,
+    elbow, forearm swell, wrist.
+
+    A box with its corners rounded off is still a box. This is the primitive
+    that lets a torso taper and a limb carry a muscle, because every ring can
+    have its own width, depth and centre - so the section changes along the
+    form instead of being extruded unchanged.
+
+    Each ring is {"c": [x, y, z], "rx": half-width, "ry": half-depth}. The ring
+    is laid perpendicular to the path through its neighbours, so a curved stack
+    of rings makes a curved form rather than a sheared one.
+    """
+    import bmesh
+
+    detail = st["detail"]
+    rings = detail["rings"]
+    segments = int(detail.get("segments", 20 if style != "blocky" else 8))
+    centres = [Vector(r["c"]) for r in rings]
+
+    bm = bmesh.new()
+    loops = []
+    for i, ring in enumerate(rings):
+        centre = centres[i]
+        if i == 0:
+            tangent = centres[1] - centre
+        elif i == len(rings) - 1:
+            tangent = centre - centres[-2]
+        else:
+            tangent = centres[i + 1] - centres[i - 1]
+        if tangent.length < 1e-9:
+            tangent = Vector((0, 0, 1))
+        tangent.normalize()
+
+        reference = Vector((0, 0, 1))
+        if abs(tangent.dot(reference)) > 0.985:
+            reference = Vector((0, 1, 0))
+        axis_x = tangent.cross(reference).normalized()
+        axis_y = tangent.cross(axis_x).normalized()
+
+        rx, ry = float(ring["rx"]), float(ring.get("ry", ring["rx"]))
+        loop = []
+        for s in range(segments):
+            angle = 2.0 * math.pi * s / segments
+            offset = axis_x * (rx * math.cos(angle)) + axis_y * (ry * math.sin(angle))
+            loop.append(bm.verts.new(centre + offset))
+        loops.append(loop)
+
+    for a, b in zip(loops, loops[1:]):
+        for s in range(segments):
+            t = (s + 1) % segments
+            bm.faces.new((a[s], a[t], b[t], b[s]))
+    for loop, flip in ((loops[0], True), (loops[-1], False)):
+        bm.faces.new(tuple(reversed(loop)) if flip else tuple(loop))
+
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    mesh = bpy.data.meshes.new(st["part"])
+    bm.to_mesh(mesh)
+    bm.free()
+
+    obj = bpy.data.objects.new(st["part"], mesh)
+    bpy.context.collection.objects.link(obj)
+    bpy.context.view_layer.objects.active = obj
+    return _finish(obj, st, style != "blocky")
 
 
 def _apply_scale(obj):

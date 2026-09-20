@@ -344,6 +344,73 @@ def limb(part, head, tail, r0, r1, color, bone_def=None, label=None):
                                      "r0": r0, "r1": r1})
 
 
+def loft(part, rings, color, bone_def=None, label=None, segments=None,
+         attach=None):
+    """
+    A part described by its cross-sections rather than by a primitive.
+
+    `rings` runs along the form: [{"c": [x, y, z], "rx": .., "ry": ..}, ...].
+    The bounding box is worked out with the same frame maths the builder uses,
+    so the floor checks and the sculpt pass can measure a loft exactly the way
+    they measure a box.
+    """
+    lo = [1e18, 1e18, 1e18]
+    hi = [-1e18, -1e18, -1e18]
+    centres = [r["c"] for r in rings]
+    for i, r in enumerate(rings):
+        c = centres[i]
+        if i == 0:
+            t = _sub(centres[1], c)
+        elif i == len(rings) - 1:
+            t = _sub(c, centres[-2])
+        else:
+            t = _sub(centres[i + 1], centres[i - 1])
+        t = _unit(t) or [0.0, 0.0, 1.0]
+        reference = [0.0, 0.0, 1.0]
+        if abs(_dot(t, reference)) > 0.985:
+            reference = [0.0, 1.0, 0.0]
+        ax = _unit(_cross(t, reference)) or [1.0, 0.0, 0.0]
+        ay = _unit(_cross(t, ax)) or [0.0, 1.0, 0.0]
+        rx, ry = r["rx"], r.get("ry", r["rx"])
+        for axis in range(3):
+            # the widest this ring reaches along one world axis
+            reach = (rx * ax[axis] ** 2 + ry * ay[axis] ** 2) ** 0.5 if False else \
+                ((rx * ax[axis]) ** 2 + (ry * ay[axis]) ** 2) ** 0.5
+            lo[axis] = min(lo[axis], c[axis] - reach)
+            hi[axis] = max(hi[axis], c[axis] + reach)
+    size = [(hi[i] - lo[i]) / 2.0 for i in range(3)]
+    centre = [(hi[i] + lo[i]) / 2.0 for i in range(3)]
+    detail = {"rings": rings}
+    if segments:
+        detail["segments"] = segments
+    return step(part, "loft", size, centre, color, bone=bone_def, label=label,
+                detail=detail, attach=attach)
+
+
+def _sub(a, b):
+    return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+
+
+def _dot(a, b):
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _cross(a, b):
+    return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0]]
+
+
+def _unit(v):
+    length = _dot(v, v) ** 0.5
+    return [v[0] / length, v[1] / length, v[2] / length] if length > 1e-12 else None
+
+
+def ring(x, y, z, rx, ry=None):
+    return {"c": [round(x, 5), round(y, 5), round(z, 5)],
+            "rx": round(rx, 5), "ry": round(ry if ry is not None else rx, 5)}
+
+
+
 def mirrored(part, head, tail, r0, r1, color, parent_bone, label):
     """Build the same limb on both sides. Returns two steps."""
     out = []
@@ -365,24 +432,26 @@ def mirrored(part, head, tail, r0, r1, color, parent_bone, label):
 
 def build_humanoid(words, scale, bulk, style, extras):
     """
-    Built to the eight-head canon, the proportion system figure drawing has
-    used since the Renaissance, rather than to numbers that felt about right.
+    Built from cross-sections, the way a figure is constructed on paper: the
+    ribcage as an oval, the waist narrowing between ribcage and pelvis, the
+    deltoid capping the shoulder, a swell for the bicep and one for the calf.
 
-    Measured in heads, where one head is H/8:
-      feet 0 · mid-calf 1 · below knees 2 · mid-thigh 3 · crotch 4 ·
-      navel 5 · nipples 6 · chin 7 · top of head 8
-      shoulders sit a third of a head below the chin
-      shoulders 2 1/3 heads across · ribcage 1 3/4 wide by 1 1/3 deep by 2 tall
-      pelvis 1 1/4 wide by 1 deep by 1 tall · arms 3 heads long · hand = a face
-    Source: thedrawingsource.com/figure-drawing-proportions and
-    design.tutsplus.com Human Anatomy Fundamentals.
+    Vertical landmarks follow the eight-head canon (head = H/8; crotch at 4
+    heads; chin at 7; shoulders a third of a head below the chin; elbow at the
+    navel, wrist at the crotch). Widths follow anthropometry rather than the
+    drawing canon, because the canon measures the fleshed silhouette and this
+    has to build the flesh: biacromial breadth is about 0.234 H and the
+    shoulder-to-hip ratio about 1.4 for a man, so the skeletal shoulder ring is
+    narrower than the finished figure and the deltoids make up the difference.
+
+    Sources: thedrawingsource.com figure-drawing proportions; CDC/NHANES
+    biacromial and bi-iliac breadth; howtodrawcomicsacademy.com on the torso
+    front view (ribcage oval, waist narrowing, deltoid caps).
     """
     H = 1.8 * scale
-    K = H / 8.0                                  # one head
     style = style or ("blocky" if any(w in words for w in
                       ("robot", "android", "mech", "golem")) else "round")
     chibi = any(w in words for w in ("chibi", "cute", "toy", "baby", "doll"))
-    head_scale = 1.7 if chibi else 1.0
 
     pal = pick_colors(words, "#4a7ab8", "#d4a017", default_skin="#d9a07a")
     body, accent, skin = pal["body"], pal["accent"], pal["skin"]
@@ -392,84 +461,120 @@ def build_humanoid(words, scale, bulk, style, extras):
         skin = pal["light"]
     leg_col = pal["dark"] if is_machine else body
 
-    # the eight-head landmarks, in metres
-    z_ankle = 0.30 * K
-    z_knee = 2.05 * K                            # the joint sits just above
-    z_hip = 4.00 * K                             # crotch
-    z_navel = 5.00 * K
-    z_chest = 6.00 * K                           # nipple line
-    z_shoulder = 7.00 * K - K / 3.0              # a third of a head below chin
-    z_chin = 7.00 * K
-    z_elbow = 5.00 * K                           # the elbow is at the navel
-    z_wrist = 4.00 * K                           # and the wrist at the crotch
-    z_fingers = z_wrist - 0.72 * K
+    B = bulk                                   # every girth scales with build
+    R = lambda x, y, z, rx, ry=None: ring(x * H, y * H, z * H, rx * H * B,
+                                          (ry if ry is not None else rx) * H * B)
 
-    head_h = K * head_scale                      # a head is one head tall
-    z_head = z_chin + head_h / 2.0
-    head_rx, head_ry, head_rz = (0.345 * head_h, 0.44 * head_h, 0.50 * head_h)
-
-    x_shoulder = 1.167 * K                       # half of 2 1/3 heads
-    x_arm = x_shoulder - 0.20 * K                # where the arm hangs
-    x_hip = 0.42 * K
-    r_arm = 0.215 * K * bulk               # fuller than the bare anatomy
-    r_leg = 0.36 * K * bulk                # figure, to survive the relax
-
-    torso = "box" if style == "blocky" else "capsule"
-    solid = "box" if style == "blocky" else "sphere"
+    # ---- torso: one stack of sections, split at the waist so the pelvis and
+    # the ribcage can each carry their own bone. The two share their middle
+    # rings, so the overlap has no step in it for the sculpt pass to find.
+    torso = [
+        R(0, +0.002, 0.478, 0.056, 0.046),     # underside of the pelvis
+        R(0, +0.004, 0.512, 0.077, 0.056),     # crotch
+        R(0, +0.002, 0.565, 0.088, 0.060),     # hip crest
+        R(0, -0.006, 0.625, 0.071, 0.050),     # waist, the narrowest point
+        R(0,  0.000, 0.695, 0.085, 0.061),     # lower ribs
+        R(0, +0.006, 0.762, 0.096, 0.066),     # chest
+        R(0, +0.004, 0.820, 0.098, 0.060),     # shoulder line (skeletal)
+        R(0, +0.002, 0.852, 0.060, 0.051),     # trapezius, sloping in
+        R(0, -0.002, 0.872, 0.041, 0.041),     # neck base
+    ]
 
     S = []
-    # 1. pelvis - 1 1/4 heads wide, 1 deep, 1 tall ------------------------
-    S.append(step("hips", torso,
-                  [0.625 * K * bulk, 0.50 * K * bulk, 0.64 * K],
-                  [0, 0, z_hip + 0.56 * K],
-                  body, bone=bone("hips", [0, 0, z_hip], [0, 0, z_navel]),
-                  label="hips"))
-    # 2. ribcage - 1 3/4 heads wide, 1 1/3 deep, 2 tall -------------------
-    S.append(step("chest", torso,
-                  [0.875 * K * bulk, 0.667 * K * bulk, 1.10 * K],
-                  [0, 0, (z_navel + z_chin) / 2.0 - 0.04 * K],
-                  body, bone=bone("spine", [0, 0, z_navel], [0, 0, z_shoulder],
-                                  "hips"),
-                  label="chest"))
-    # 3. neck -------------------------------------------------------------
-    S.append(limb("neck", [0, 0, z_shoulder], [0, 0, z_chin + 0.10 * K],
-                  0.24 * K, 0.22 * K, skin,
-                  bone("neck", [0, 0, z_shoulder], [0, 0, z_chin], "spine"),
+    S.append(loft("hips", torso[0:5], body,
+                  bone("hips", [0, 0, 0.500 * H], [0, 0, 0.625 * H]),
+                  "pelvis"))
+    S.append(loft("chest", torso[3:9], body,
+                  bone("spine", [0, 0, 0.625 * H], [0, 0, 0.833 * H], "hips"),
+                  "ribcage"))
+    S.append(loft("neck", [R(0, +0.002, 0.828, 0.038),
+                           R(0, -0.001, 0.858, 0.034),
+                           R(0, -0.004, 0.884, 0.032)], skin,
+                  bone("neck", [0, 0, 0.833 * H], [0, 0, 0.875 * H], "spine"),
                   "neck"))
-    # 4. head - one head tall, a little over a third of that wide ---------
-    S.append(step("head", solid, [head_rx, head_ry, head_rz],
-                  [0, -0.04 * K, z_head], skin,
-                  bone=bone("head", [0, 0, z_chin], [0, 0, z_chin + head_h],
-                            "neck"),
-                  label="head"))
-    # 5-8. arms - three heads from shoulder to fingertip -------------------
-    S += mirrored("shoulder", [0.35 * K, 0, z_shoulder - 0.05 * K],
-                  [x_arm, 0, z_shoulder - 0.12 * K],
-                  r_arm * 1.95, r_arm * 1.15, body, "spine", "shoulder")
-    S += mirrored("upperarm", [x_arm, 0, z_shoulder - 0.12 * K],
-                  [x_arm, 0, z_elbow], r_arm * 1.12, r_arm * 0.86, body,
-                  "shoulder.X", "upper arm")
-    S += mirrored("forearm", [x_arm, 0, z_elbow], [x_arm, 0, z_wrist],
-                  r_arm * 0.92, r_arm * 0.62, skin, "upperarm.X", "forearm")
-    S += mirrored("hand", [x_arm, 0, z_wrist], [x_arm, 0, z_fingers],
-                  r_arm * 0.80, r_arm * 0.52, skin, "forearm.X", "hand")
-    # 9-11. legs - four heads from crotch to floor ------------------------
-    S += mirrored("thigh", [x_hip, 0, z_hip], [x_hip, 0, z_knee],
-                  r_leg, r_leg * 0.72, leg_col, "hips", "thigh")
-    S += mirrored("shin", [x_hip, 0, z_knee], [x_hip, 0, z_ankle],
-                  r_leg * 0.72, r_leg * 0.42, leg_col, "thigh.X", "shin")
-    for side, sx in (("L", 1.0), ("R", -1.0)):
-        S.append(step("foot.%s" % side, "box",
-                      [0.20 * K, 0.52 * K, 0.155 * K],
-                      [x_hip * sx, -0.28 * K, 0.155 * K], pal["dark"],
-                      bone=bone("foot.%s" % side, [x_hip * sx, 0, z_ankle],
-                                [x_hip * sx, -0.62 * K, 0.10 * K],
-                                "shin.%s" % side),
-                      label="foot %s" % ("left" if side == "L" else "right")))
 
-    head_r = head_rz                             # the extras measure from this
-    S += humanoid_extras(extras, words, H, head_r, z_head, x_arm, pal, style,
-                         is_machine)
+    # ---- head: chin, jaw, cheek, cranium, crown - not an egg
+    head_scale = 1.55 if chibi else 1.0
+    z_chin, z_top = 0.873, 0.873 + 0.125 * head_scale   # exactly one head
+    def HR(t, rx, ry, y=0.0):
+        return ring(0, y * H, (z_chin + (z_top - z_chin) * t) * H,
+                    rx * H * head_scale, ry * H * head_scale)
+    S.append(loft("head", [
+        HR(0.00, 0.028, 0.033, -0.010),
+        HR(0.17, 0.042, 0.050, -0.006),
+        HR(0.36, 0.048, 0.056, -0.004),
+        HR(0.58, 0.049, 0.058, -0.002),
+        HR(0.81, 0.042, 0.048, +0.000),
+        HR(1.00, 0.020, 0.024, +0.002),
+    ], skin, bone("head", [0, 0, 0.875 * H], [0, 0, z_top * H], "neck"), "head"))
+
+    # ---- arms, held a little away from the body. The gap between arm and
+    # torso is most of what makes a standing figure read as a person.
+    for side, sx in (("L", 1.0), ("R", -1.0)):
+        tag = lambda n: "%s.%s" % (n, side)
+        S.append(step(tag("deltoid"), "sphere",
+                      [0.042 * H * B, 0.044 * H * B, 0.045 * H * B],
+                      [0.101 * H * sx, 0.002 * H, 0.816 * H], body,
+                      bone=bone(tag("shoulder"), [0.032 * H * sx, 0, 0.834 * H],
+                                [0.100 * H * sx, 0, 0.810 * H], "spine"),
+                      label="deltoid"))
+        S.append(loft(tag("upperarm"), [
+            R(0.100 * sx, 0.002, 0.810, 0.033),
+            R(0.111 * sx, 0.002, 0.755, 0.036),      # bicep
+            R(0.123 * sx, 0.001, 0.688, 0.030),
+            R(0.131 * sx, 0.000, 0.632, 0.025),      # elbow
+        ], body, bone(tag("upperarm"), [0.100 * H * sx, 0, 0.810 * H],
+                      [0.132 * H * sx, 0, 0.625 * H], tag("shoulder")),
+            "upper arm"))
+        S.append(loft(tag("forearm"), [
+            R(0.132 * sx, 0.000, 0.628, 0.026),
+            R(0.139 * sx, 0.000, 0.588, 0.029),      # flexor swell
+            R(0.146 * sx, 0.000, 0.540, 0.022),
+            R(0.150 * sx, 0.000, 0.503, 0.018),      # wrist
+        ], skin, bone(tag("forearm"), [0.132 * H * sx, 0, 0.625 * H],
+                      [0.150 * H * sx, 0, 0.500 * H], tag("upperarm")),
+            "forearm"))
+        S.append(loft(tag("hand"), [
+            R(0.150 * sx, 0.000, 0.500, 0.013, 0.022),
+            R(0.153 * sx, -0.002, 0.466, 0.017, 0.029),   # knuckles
+            R(0.155 * sx, -0.002, 0.424, 0.014, 0.025),
+            R(0.156 * sx, -0.002, 0.406, 0.008, 0.013),
+        ], skin, bone(tag("hand"), [0.150 * H * sx, 0, 0.500 * H],
+                      [0.156 * H * sx, 0, 0.405 * H], tag("forearm")),
+            "hand"))
+
+    # ---- legs, with the mass on the thigh and a calf that tapers to the ankle
+    for side, sx in (("L", 1.0), ("R", -1.0)):
+        tag = lambda n: "%s.%s" % (n, side)
+        S.append(loft(tag("thigh"), [
+            R(0.052 * sx, 0.000, 0.505, 0.060),
+            R(0.053 * sx, 0.000, 0.430, 0.058),
+            R(0.054 * sx, 0.000, 0.330, 0.046),
+            R(0.055 * sx, 0.000, 0.272, 0.038),      # knee
+        ], leg_col, bone(tag("thigh"), [0.052 * H * sx, 0, 0.500 * H],
+                         [0.055 * H * sx, 0, 0.260 * H], "hips"), "thigh"))
+        S.append(loft(tag("shin"), [
+            R(0.055 * sx, 0.000, 0.266, 0.037),
+            R(0.056 * sx, 0.004, 0.205, 0.040),      # calf
+            R(0.057 * sx, 0.002, 0.120, 0.027),
+            R(0.058 * sx, 0.000, 0.048, 0.021),      # ankle
+        ], leg_col, bone(tag("shin"), [0.055 * H * sx, 0, 0.260 * H],
+                         [0.058 * H * sx, 0, 0.045 * H], tag("thigh")), "shin"))
+        # the foot runs forward, so its rings stack along Y rather than Z
+        S.append(loft(tag("foot"), [
+            ring(0.058 * H * sx, +0.030 * H, 0.032 * H, 0.021 * H, 0.026 * H),
+            ring(0.058 * H * sx, -0.005 * H, 0.026 * H, 0.026 * H, 0.024 * H),
+            ring(0.066 * H * sx, -0.048 * H, 0.020 * H, 0.028 * H, 0.019 * H),
+            ring(0.076 * H * sx, -0.080 * H, 0.013 * H, 0.023 * H, 0.012 * H),
+        ], pal["dark"], bone(tag("foot"), [0.058 * H * sx, 0, 0.045 * H],
+                             [0.060 * H * sx, -0.070 * H, 0.020 * H],
+                             tag("shin")),
+            "foot %s" % ("left" if side == "L" else "right")))
+
+    head_r = 0.066 * H * head_scale
+    z_head = (z_chin + (z_top - z_chin) * 0.45) * H
+    S += humanoid_extras(extras, words, H, head_r, z_head, 0.150 * H, pal,
+                         style, is_machine)
 
     return S, {"rig_profile": "humanoid", "height": H, "style": style,
                "subject": _subject(words, ARCHETYPES["humanoid"], "person"),
@@ -602,121 +707,164 @@ def humanoid_extras(extras, words, H, head_r, z_head, x_arm, pal, style,
 
 def build_quadruped(words, scale, bulk, style, extras):
     """
-    A dog is longer than it is tall. Breed standards put body length against
+    A dog is longer than it is tall - breed standards put body length against
     shoulder height at about 10 to 8.5 for a German Shepherd and 10 to 9 for a
-    Vizsla, so 1.17 is the middle of the range boneka builds to. The muzzle is
-    4.5 to the skull's 5.5, after the Taiwan Dog standard.
-    Source: breedingbetterdogs.com and siriusdog.com breed-standard ratios.
+    Vizsla - it is deepest at the chest, tucked at the waist and wide again
+    over the hindquarters, and a standard's rule of thumb is that the chest
+    reaches halfway down the leg. So the body is a run of cross-sections along
+    the spine rather than two capsules, and the hind leg is angulated, stifle
+    forward and hock back, which is most of what tells a dog from a table.
+
+    Sources: breedingbetterdogs.com and siriusdog.com breed-standard ratios;
+    Taiwan Dog standard for muzzle 4.5 to skull 5.5.
     """
     Hs = 0.62 * scale                      # height at the shoulder
-    L = 1.17 * Hs                          # body: chest to rump
+    L = 1.17 * Hs                          # chest to rump
     style = style or "round"
     pal = pick_colors(words, "#8c6239", "#4a3524")
     body, accent, dark = pal["body"], pal["accent"], pal["dark"]
+    B = bulk
 
-    z_back = 0.86 * Hs
-    z_knee, z_ankle = 0.40 * Hs, 0.09 * Hs
-    y_front, y_rear = -0.30 * L, 0.32 * L
-    x_leg = 0.17 * L
-    r_leg = 0.055 * L * bulk
-    head_l = 0.30 * L                      # head length against body length
-    head_rx, head_ry, head_rz = 0.085 * L, head_l / 2.0, 0.105 * L
-    head_r = head_rz                       # what the small features measure from
+    y_front, y_rear = -0.46 * L, 0.46 * L
+    x_leg = 0.092 * L * (0.62 + 0.38 * B)   # under the body, not outboard
 
-    torso = "box" if style == "blocky" else "capsule"
-    solid = "box" if style == "blocky" else "sphere"
+    def R(y, z, rx, rz):
+        return ring(0, y * L, z * Hs, rx * L * B, rz * Hs * B)
 
+    spine = [
+        R(-0.50, 0.760, 0.085, 0.200),     # front of the chest
+        R(-0.34, 0.740, 0.135, 0.245),     # chest, the deepest point
+        R(-0.12, 0.750, 0.128, 0.225),
+        R(+0.10, 0.775, 0.112, 0.190),     # waist, tucked up
+        R(+0.32, 0.765, 0.140, 0.215),     # hindquarters
+        R(+0.50, 0.745, 0.095, 0.160),     # rump
+    ]
     S = []
-    S.append(step("hips", torso,
-                  [0.168 * L * bulk, 0.31 * L, 0.168 * L * bulk],
-                  [0, y_rear * 0.75, z_back], body,
-                  bone=bone("hips", [0, y_rear, z_back], [0, 0, z_back]),
-                  label="hindquarters"))
-    S.append(step("chest", torso,
-                  [0.180 * L * bulk, 0.33 * L, 0.180 * L * bulk],
-                  [0, y_front * 0.75, z_back], body,
-                  bone=bone("spine", [0, 0, z_back], [0, y_front, z_back + 0.02 * L],
-                            "hips"),
-                  label="chest"))
-    S.append(limb("neck", [0, y_front, z_back + 0.02 * L],
-                  [0, y_front - 0.22 * L, z_back + 0.22 * L],
-                  0.075 * L * bulk, 0.058 * L, body,
-                  bone("neck", [0, y_front, z_back + 0.02 * L],
-                       [0, y_front - 0.22 * L, z_back + 0.22 * L], "spine"),
-                  "neck"))
-    z_head = z_back + 0.24 * L
-    y_head = y_front - 0.30 * L
-    S.append(step("head", solid, [head_rx, head_ry, head_rz],
-                  [0, y_head, z_head], body,
-                  bone=bone("head", [0, y_front - 0.22 * L, z_back + 0.22 * L],
-                            [0, y_head - 0.12 * L, z_head], "neck"),
-                  label="head"))
+    S.append(loft("chest", spine[0:4], body,
+                  bone("spine", [0, 0, 0.76 * Hs], [0, y_front, 0.77 * Hs],
+                       "hips"), "chest"))
+    S.append(loft("hips", spine[2:6], body,
+                  bone("hips", [0, y_rear, 0.76 * Hs], [0, 0, 0.76 * Hs]),
+                  "hindquarters"))
+
+    # ---- neck and head: short and thick, head about a third of the body
+    head_l = 0.32 * L
+    y_head = y_front - 0.22 * L
+    z_head = 0.95 * Hs
+    S.append(loft("neck", [
+        ring(0, y_front * 0.90, 0.80 * Hs, 0.105 * L * B, 0.115 * L * B),
+        ring(0, y_front - 0.10 * L, 0.88 * Hs, 0.092 * L * B, 0.098 * L * B),
+        ring(0, y_head + 0.07 * L, z_head - 0.03 * Hs, 0.082 * L * B, 0.086 * L * B),
+    ], body, bone("neck", [0, y_front, 0.78 * Hs],
+                  [0, y_head + 0.07 * L, z_head], "spine"), "neck"))
+
     muzzle_l = 0.45 * head_l               # muzzle 4.5 to the skull's 5.5
-    S.append(step("muzzle", "capsule" if style != "blocky" else "box",
-                  [head_rx * 0.62, muzzle_l / 2.0, head_rz * 0.48],
-                  [0, y_head - head_ry * 0.75 - muzzle_l * 0.28,
-                   z_head - head_rz * 0.34], pal["light"],
-                  attach="head", label="muzzle"))
-    S.append(step("nose", "sphere", [head_rx * 0.30, head_rx * 0.26, head_rx * 0.26],
-                  [0, y_head - head_ry * 0.75 - muzzle_l * 0.82,
-                   z_head - head_rz * 0.26], "#2b2b2b",
-                  attach="head", label="nose"))
+    S.append(loft("head", [
+        ring(0, y_head + 0.10 * L, z_head - 0.01 * Hs, 0.088 * L, 0.090 * L),
+        ring(0, y_head + 0.02 * L, z_head + 0.01 * Hs, 0.098 * L, 0.100 * L),
+        ring(0, y_head - 0.06 * L, z_head - 0.02 * Hs, 0.078 * L, 0.078 * L),
+        ring(0, y_head - 0.06 * L - muzzle_l * 0.40, z_head - 0.055 * Hs,
+             0.048 * L, 0.046 * L),
+        ring(0, y_head - 0.06 * L - muzzle_l * 0.98, z_head - 0.070 * Hs,
+             0.041 * L, 0.039 * L),
+    ], body, bone("head", [0, y_head + 0.07 * L, z_head],
+                  [0, y_head - 0.16 * L, z_head - 0.05 * Hs], "neck"), "head"))
+
+    nose_y = y_head - 0.06 * L - muzzle_l * 1.05
+    S.append(step("nose", "sphere", [0.021 * L, 0.019 * L, 0.019 * L],
+                  [0, nose_y, z_head - 0.072 * Hs], "#2b2b2b", attach="head",
+                  label="nose"))
     for side, sx in (("L", 1.0), ("R", -1.0)):
-        S.append(step("eye.%s" % side, "sphere", [head_r * 0.14] * 3,
-                      [head_rx * 0.62 * sx, y_head - head_ry * 0.45,
-                       z_head + head_rz * 0.34], "#17202a", attach="head",
-                      label="eye"))
-        S.append(step("ear.%s" % side, "cone",
-                      [head_rx * 0.40, head_rx * 0.26, head_rz * 0.80],
-                      [head_rx * 0.68 * sx, y_head + head_ry * 0.30,
-                       z_head + head_rz * 1.05], accent, attach="head",
-                      label="ear"))
+        S.append(step("eye.%s" % side, "sphere", [0.017 * L] * 3,
+                      [0.058 * L * sx, y_head - 0.040 * L, z_head + 0.015 * Hs],
+                      "#17202a", attach="head", label="eye"))
+        S.append(loft("ear.%s" % side, [
+            ring(0.062 * L * sx, y_head + 0.055 * L, z_head + 0.055 * Hs,
+                 0.032 * L, 0.019 * L),
+            ring(0.070 * L * sx, y_head + 0.060 * L, z_head + 0.135 * Hs,
+                 0.023 * L, 0.014 * L),
+            ring(0.076 * L * sx, y_head + 0.062 * L, z_head + 0.195 * Hs,
+                 0.006 * L, 0.005 * L),
+        ], accent, attach="head", label="ear"))
 
-    for tag, y, parent in (("front", y_front, "spine"), ("back", y_rear, "hips")):
+    # ---- legs
+    for tag in ("front", "back"):
+        front = tag == "front"
+        y_top = (y_front + 0.10 * L) if front else (y_rear - 0.10 * L)
+        y_mid = y_top + (0.01 * L if front else -0.075 * L)
+        y_low = y_top + (0.00 * L if front else 0.055 * L)
+        parent = "spine" if front else "hips"
+        z_top = 0.80 * Hs
+        z_mid = (0.47 if front else 0.45) * Hs     # elbow / stifle
+        z_low = 0.055 * Hs                          # pastern, just off the floor
         for side, sx in (("L", 1.0), ("R", -1.0)):
-            nm = "%sleg_%s.%s" % ("fore" if tag == "front" else "hind", "upper", side)
-            top = [x_leg * sx, y, z_back - 0.06 * L]
-            mid = [x_leg * sx, y, z_knee]
-            low = [x_leg * sx, y, z_ankle]
-            b1 = "thigh_%s.%s" % (tag, side)
-            b2 = "shin_%s.%s" % (tag, side)
-            S.append(limb(nm, top, mid, r_leg, r_leg * 0.78, body,
-                          bone(b1, top, mid, parent), "%s leg upper" % tag))
-            S.append(limb(nm.replace("upper", "lower"), mid, low,
-                          r_leg * 0.78, r_leg * 0.6, body,
-                          bone(b2, mid, low, b1), "%s leg lower" % tag))
-            S.append(step("paw_%s.%s" % (tag, side), "box",
-                          [r_leg * 0.85, 0.05 * L, 0.022 * L],
-                          [x_leg * sx, y - 0.015 * L, 0.025 * L], dark,
-                          bone=bone("paw_%s.%s" % (tag, side), low,
-                                    [x_leg * sx, y - 0.07 * L, 0.02 * L], b2),
-                          label="%s paw" % tag))
+            b1, b2 = "thigh_%s.%s" % (tag, side), "shin_%s.%s" % (tag, side)
+            x = x_leg * sx
+            # shoulder blade at the front, haunch at the back: the mass that
+            # carries the leg into the body. Without it the leg pops out of
+            # the flank as a tube with a crease round it.
+            S.append(step("%s_mass.%s" % (tag, side), "sphere",
+                          [(0.052 if front else 0.066) * L * B,
+                           (0.115 if front else 0.140) * L,
+                           (0.165 if front else 0.195) * Hs],
+                          [x * 0.72, y_top + (0.01 if front else -0.02) * L,
+                           (0.70 if front else 0.68) * Hs], body,
+                          attach=b1,
+                          label="%s %s" % (tag,
+                                           "shoulder" if front else "haunch")))
+            # the top ring is deliberately narrower than the ribcage: the
+            # shoulder or haunch mass is what shows there, and a wide ring
+            # here punches a plate out through the flank
+            S.append(loft("%sleg_upper.%s" % (tag, side), [
+                ring(x, y_top, z_top + 0.04 * Hs, 0.046 * L * B, 0.054 * L * B),
+                ring(x, (y_top + y_mid) / 2, (z_top + z_mid) / 2,
+                     0.050 * L * B, 0.057 * L * B),
+                ring(x, y_mid, z_mid, 0.036 * L * B, 0.040 * L * B),
+            ], body, bone(b1, [x, y_top, z_top], [x, y_mid, z_mid], parent),
+                "%s leg upper" % tag))
+            S.append(loft("%sleg_lower.%s" % (tag, side), [
+                ring(x, y_mid, z_mid + 0.03 * Hs, 0.038 * L * B, 0.044 * L * B),
+                ring(x, (y_mid + y_low) / 2, (z_mid + z_low) / 2 + 0.04 * Hs,
+                     0.033 * L * B, 0.040 * L * B),   # the calf, carried high
+                ring(x, y_low + 0.01 * L, 0.20 * Hs, 0.023 * L, 0.025 * L),
+                ring(x, y_low, z_low, 0.021 * L, 0.023 * L),
+            ], body, bone(b2, [x, y_mid, z_mid], [x, y_low, z_low], b1),
+                "%s leg lower" % tag))
+            S.append(loft("paw_%s.%s" % (tag, side), [
+                ring(x, y_low + 0.024 * L, 0.052 * Hs, 0.023 * L, 0.040 * Hs),
+                ring(x, y_low - 0.022 * L, 0.034 * Hs, 0.030 * L, 0.030 * Hs),
+                ring(x, y_low - 0.052 * L, 0.016 * Hs, 0.024 * L, 0.015 * Hs),
+            ], dark, bone("paw_%s.%s" % (tag, side), [x, y_low, z_low],
+                          [x, y_low - 0.055 * L, 0.02 * Hs], b2),
+                "%s paw" % tag))
 
+    # ---- tail, carried back and a little down, tapering to a point
     prev = "hips"
     for i in range(4):
         t = i / 3.0
-        h = [0, y_rear + 0.14 * L * i, z_back + 0.04 * L - 0.02 * L * i]
-        tl = [0, y_rear + 0.14 * L * (i + 1), z_back + 0.04 * L - 0.02 * L * (i + 1)]
+        h = [0, y_rear + 0.085 * L * i, (0.82 - 0.085 * i) * Hs]
+        tl = [0, y_rear + 0.085 * L * (i + 1), (0.82 - 0.085 * (i + 1)) * Hs]
         nm = "tail_%02d" % i
-        S.append(limb(nm, h, tl, 0.045 * L * (1 - 0.5 * t),
-                      0.045 * L * (1 - 0.5 * (t + 0.33)), body,
+        S.append(limb(nm, h, tl, 0.040 * L * (1 - 0.62 * t),
+                      0.040 * L * (1 - 0.62 * (t + 0.33)), body,
                       bone(nm, h, tl, prev), "tail %d" % (i + 1)))
         prev = nm
 
     if "horns" in extras:
         for side, sx in (("L", 1.0), ("R", -1.0)):
             S.append(step("horn.%s" % side, "cone",
-                          [head_r * 0.2, head_r * 0.2, head_r * 0.8],
-                          [head_r * 0.5 * sx, y_head, z_head + head_r * 1.3],
-                          "#e8e2d0", label="horn"))
+                          [0.018 * L, 0.018 * L, 0.070 * L],
+                          [0.048 * L * sx, y_head, z_head + 0.13 * Hs],
+                          "#e8e2d0", attach="head", label="horn"))
     if "wings" in extras:
         for side, sx in (("L", 1.0), ("R", -1.0)):
             S.append(step("wing.%s" % side, "box",
                           [0.21 * L, 0.17 * L, 0.01 * L],
-                          [0.36 * L * sx, 0, z_back + 0.16 * L], accent,
-                          rot=(0.3 * (1 if sx > 0 else -1), 0, 0), label="wing"))
+                          [0.30 * L * sx, 0, 1.02 * Hs], accent,
+                          rot=(0.3 * (1 if sx > 0 else -1), 0, 0),
+                          attach="spine", label="wing"))
 
-    return S, {"rig_profile": "quadruped", "height": z_head + head_r,
+    return S, {"rig_profile": "quadruped", "height": z_head + 0.20 * Hs,
                "style": style, "organic": True,
                "subject": _subject(words, ARCHETYPES["quadruped"], "dog")}
 
@@ -728,86 +876,102 @@ def build_quadruped(words, scale, bulk, style, extras):
 def build_bird(words, scale, bulk, style, extras):
     """
     A chicken measures 40-60 cm nose to tail while standing 25-37 cm tall and
-    only 11.5-18 cm across: it is a long, narrow thing, not the ball the first
-    version built. Those figures give length about 1.55 times the height and
-    width about 0.45 of it.
+    only 11.5-18 cm across: a long narrow thing, not a ball. The body is built
+    as a run of sections from breast to tail so it can be full at the breast
+    and taper away behind, with the thigh buried in the feathers and only the
+    shank showing - which is how a chicken's leg actually reads.
+
     Source: dimensions.com, Domestic Chicken (Gallus gallus domesticus).
     """
     H = 0.34 * scale                       # standing height
     style = style or "round"
     pal = pick_colors(words, "#ecf0f1", "#e67e22")
     body, accent = pal["body"], pal["accent"]
-    solid = "box" if style == "blocky" else "sphere"
+    B = bulk
 
-    # an egg lying on its side, longer than it is wide, not a ball
-    rx, ry, rz = 0.225 * H * bulk, 0.42 * H, 0.30 * H * bulk
-    z_body = 0.58 * H
-    y_body = 0.04 * H                      # the mass sits a little back
-    head_r = 0.115 * H
-    y_head = y_body - ry * 0.78
-    z_head = 0.88 * H
+    z_body = 0.53 * H
+    head_r = 0.105 * H
+    y_head = -0.36 * H
+    z_head = 0.86 * H
 
-    S = [
-        step("body", solid, [rx, ry, rz], [0, y_body, z_body], body,
-             bone=bone("hips", [0, y_body + ry * 0.4, z_body],
-                       [0, y_body - ry * 0.4, z_body]),
-             label="body"),
-        limb("neck", [0, y_body - ry * 0.55, z_body + rz * 0.55],
-             [0, y_head, z_head - head_r * 0.7], 0.085 * H, 0.062 * H, body,
-             bone("neck", [0, y_body - ry * 0.55, z_body + rz * 0.55],
-                  [0, y_head, z_head - head_r * 0.7], "hips"), "neck"),
-        step("head", solid, [head_r * 0.85, head_r * 1.05, head_r],
-             [0, y_head, z_head], body,
-             bone=bone("head", [0, y_head, z_head - head_r * 0.7],
-                       [0, y_head - head_r, z_head + head_r * 0.4], "neck"),
-             label="head"),
-        step("comb", "box", [head_r * 0.10, head_r * 0.62, head_r * 0.42],
-             [0, y_head + head_r * 0.1, z_head + head_r * 1.15], "#c0392b",
-             attach="head", label="comb"),
-        step("beak", "cone", [head_r * 0.34, head_r * 0.34, head_r * 0.62],
-             [0, y_head - head_r * 1.35, z_head - head_r * 0.12], accent,
-             rot=(1.5708, 0, 0), attach="head", label="beak"),
-        step("wattle", "sphere", [head_r * 0.16, head_r * 0.20, head_r * 0.30],
-             [0, y_head - head_r * 0.85, z_head - head_r * 0.95], "#c0392b",
-             attach="head", label="wattle"),
-    ]
+    def R(y, z, rx, rz):
+        return ring(0, y * H, z * H, rx * H * B, rz * H * B)
+
+    # breast at the front, tapering back and up into the tail
+    S = [loft("body", [
+        R(-0.30, 0.500, 0.120, 0.150),     # breast
+        R(-0.14, 0.530, 0.170, 0.215),     # the deepest, fullest point
+        R(+0.06, 0.540, 0.165, 0.205),
+        R(+0.26, 0.565, 0.125, 0.150),
+        R(+0.40, 0.600, 0.070, 0.085),     # where the tail leaves
+    ], body, bone("hips", [0, 0.16 * H, z_body], [0, -0.14 * H, z_body]),
+        "body")]
+
+    S.append(loft("neck", [
+        ring(0, -0.26 * H, 0.620 * H, 0.072 * H * B, 0.080 * H * B),
+        ring(0, -0.32 * H, 0.740 * H, 0.054 * H * B, 0.058 * H * B),
+        ring(0, y_head + 0.02 * H, z_head - head_r * 0.7, 0.050 * H, 0.052 * H),
+    ], body, bone("neck", [0, -0.26 * H, 0.62 * H],
+                  [0, y_head, z_head - head_r * 0.7], "hips"), "neck"))
+
+    S.append(loft("head", [
+        ring(0, y_head + 0.055 * H, z_head - head_r * 0.5, 0.062 * H, 0.066 * H),
+        ring(0, y_head + 0.010 * H, z_head + head_r * 0.15, 0.078 * H, 0.084 * H),
+        ring(0, y_head - 0.040 * H, z_head - head_r * 0.10, 0.058 * H, 0.060 * H),
+    ], body, bone("head", [0, y_head, z_head - head_r * 0.7],
+                  [0, y_head - 0.06 * H, z_head + head_r * 0.4], "neck"), "head"))
+
+    S.append(step("comb", "box",
+                  [head_r * 0.10, head_r * 0.60, head_r * 0.45],
+                  [0, y_head + 0.012 * H, z_head + head_r * 0.95], "#c0392b",
+                  attach="head", label="comb"))
+    S.append(step("beak", "cone", [head_r * 0.30, head_r * 0.30, head_r * 0.58],
+                  [0, y_head - 0.075 * H, z_head - head_r * 0.15], accent,
+                  rot=(1.5708, 0, 0), attach="head", label="beak"))
+    S.append(step("wattle", "sphere",
+                  [head_r * 0.15, head_r * 0.18, head_r * 0.30],
+                  [0, y_head - 0.045 * H, z_head - head_r * 0.95], "#c0392b",
+                  attach="head", label="wattle"))
+
     for side, sx in (("L", 1.0), ("R", -1.0)):
         S.append(step("eye.%s" % side, "sphere", [head_r * 0.15] * 3,
-                      [head_r * 0.52 * sx, y_head - head_r * 0.62,
-                       z_head + head_r * 0.18], "#17202a", attach="head",
+                      [head_r * 0.52 * sx, y_head - 0.030 * H,
+                       z_head + head_r * 0.10], "#17202a", attach="head",
                       label="eye"))
-        # an ellipsoid laid along the flank - a flat plate cannot sit on a curve
-        S.append(step("wing.%s" % side, "sphere",
-                      [rx * 0.34, ry * 0.60, rz * 0.52],
-                      [rx * 0.86 * sx, y_body - ry * 0.06, z_body + rz * 0.10],
-                      pal["light"],
-                      bone=bone("wing.%s" % side,
-                                [rx * 0.8 * sx, y_body, z_body + rz * 0.3],
-                                [(rx + 0.22 * H) * sx, y_body, z_body],
-                                "hips"),
-                      label="wing"))
-        # the thigh is buried in the feathers; the shank is what you see
-        S.append(limb("leg.%s" % side,
-                      [0.085 * H * sx, y_body - 0.04 * H, z_body - rz * 0.55],
-                      [0.085 * H * sx, y_body - 0.06 * H, 0.045 * H],
-                      0.030 * H, 0.022 * H, accent,
-                      bone("leg.%s" % side,
-                           [0.085 * H * sx, y_body - 0.04 * H, z_body - rz * 0.55],
-                           [0.085 * H * sx, y_body - 0.06 * H, 0.045 * H], "hips"),
-                      "leg"))
-        S.append(step("foot.%s" % side, "box",
-                      [0.028 * H, 0.062 * H, 0.014 * H],
-                      [0.085 * H * sx, y_body - 0.12 * H, 0.016 * H], accent,
-                      label="foot"))
-    # tail feathers, swept up and back - they are a third of the total length
-    S.append(step("tail", "sphere", [0.055 * H, 0.17 * H, 0.055 * H],
-                  [0, y_body + ry * 0.92, z_body + rz * 0.52], body,
-                  rot=(-0.62, 0, 0),
-                  bone=bone("tail", [0, y_body + ry * 0.8, z_body + rz * 0.3],
-                            [0, y_body + ry * 1.5, z_body + rz * 1.1], "hips"),
-                  label="tail feathers"))
-    return S, {"rig_profile": "bird", "height": z_head + head_r, "style": style,
-               "organic": True,
+        # the wing lies along the flank as a lens, not a plate on a curve
+        S.append(loft("wing.%s" % side, [
+            ring(0.150 * H * B * sx, -0.130 * H, 0.575 * H, 0.030 * H, 0.055 * H),
+            ring(0.168 * H * B * sx, -0.020 * H, 0.560 * H, 0.038 * H, 0.080 * H),
+            ring(0.150 * H * B * sx, +0.130 * H, 0.556 * H, 0.026 * H, 0.055 * H),
+            ring(0.120 * H * B * sx, +0.230 * H, 0.562 * H, 0.012 * H, 0.026 * H),
+        ], pal["light"], bone("wing.%s" % side,
+                              [0.14 * H * sx, -0.05 * H, 0.58 * H],
+                              [0.34 * H * sx, 0.02 * H, 0.55 * H], "hips"),
+            "wing"))
+        # only the shank shows; the thigh is inside the feathers
+        S.append(loft("leg.%s" % side, [
+            ring(0.075 * H * sx, -0.030 * H, 0.420 * H, 0.030 * H, 0.034 * H),
+            ring(0.078 * H * sx, -0.040 * H, 0.300 * H, 0.019 * H, 0.020 * H),
+            ring(0.080 * H * sx, -0.045 * H, 0.055 * H, 0.016 * H, 0.017 * H),
+        ], accent, bone("leg.%s" % side,
+                        [0.075 * H * sx, -0.03 * H, 0.42 * H],
+                        [0.080 * H * sx, -0.045 * H, 0.05 * H], "hips"), "leg"))
+        S.append(loft("foot.%s" % side, [
+            ring(0.080 * H * sx, +0.010 * H, 0.028 * H, 0.020 * H, 0.020 * H),
+            ring(0.080 * H * sx, -0.045 * H, 0.016 * H, 0.030 * H, 0.013 * H),
+            ring(0.080 * H * sx, -0.100 * H, 0.010 * H, 0.022 * H, 0.008 * H),
+        ], accent, attach="leg.%s" % side, label="foot"))
+
+    # tail feathers, swept up and back - a third of the whole length
+    S.append(loft("tail", [
+        ring(0, 0.360 * H, 0.605 * H, 0.060 * H, 0.055 * H),
+        ring(0, 0.480 * H, 0.710 * H, 0.072 * H, 0.038 * H),
+        ring(0, 0.560 * H, 0.810 * H, 0.050 * H, 0.020 * H),
+    ], body, bone("tail", [0, 0.34 * H, 0.60 * H], [0, 0.56 * H, 0.81 * H],
+                  "hips"), "tail feathers"))
+
+    return S, {"rig_profile": "bird", "height": z_head + head_r * 1.6,
+               "style": style, "organic": True,
                "subject": _subject(words, ARCHETYPES["bird"], "chicken")}
 
 

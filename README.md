@@ -26,11 +26,17 @@ waiting for a file. Meanwhile the panel on the right goes and finds photographs
 of the real thing, so you can judge the model against a knight rather than
 against what a knight is assumed to look like.
 
-**1½ · It gets sculpted.** A body made of a box, two cylinders and a sphere reads
-as a box, two cylinders and a sphere however carefully they are placed. So once
-the parts are down they are fused: voxel-remeshed into one continuous skin,
-relaxed, and shaded smooth. The seam where an arm meets a shoulder stops being a
-seam. Anything hard-surfaced — a crate, a sword, a deliberately blocky robot —
+**1½ · It gets sculpted.** Two things stop it looking like stacked boxes.
+
+The parts themselves are **lofted cross-sections**, not primitives: a torso is a
+stack of rings that starts wide at the shoulders, narrows at the waist and widens
+again at the hips; an arm is a shoulder ring, a bicep swell, an elbow, a forearm
+swell and a wrist. A box with the corners filed off is still a box, and that is
+all a smoothed primitive can ever be.
+
+Then the soft parts are **fused**: voxel-remeshed into one continuous skin,
+relaxed and shaded smooth, so the seam where an arm meets a shoulder stops being
+a seam. Anything hard-surfaced — a crate, a sword, a deliberately blocky robot —
 is left crisp, because a crate with soft corners is a worse crate.
 
 **2 · Give it bones.** One button. Because boneka built the mesh itself, it
@@ -92,12 +98,30 @@ and the source is named in the code beside the numbers:
 
 | Subject | What it is built to |
 |---|---|
-| People | the **eight-head canon** — head 1/8 of the height, crotch at 4 heads, shoulders 2⅓ heads across and a third of a head below the chin, arms 3 heads long, elbow at the navel, wrist at the crotch |
-| Four-legged animals | breed-standard **length against shoulder height**, about 10 to 8.5; muzzle 4.5 to the skull's 5.5 |
-| Birds | a chicken measured at **40–60 cm long, 25–37 cm tall, 11.5–18 cm across** — a long narrow thing, not a ball |
+| People | the **eight-head canon** for the vertical landmarks — head 1/8 of the height, crotch at 4 heads, chin at 7, shoulders a third of a head below it, arms 3 heads long, elbow at the navel, wrist at the crotch. Widths come from **anthropometry** instead, because the drawing canon measures the fleshed silhouette and this has to build the flesh: biacromial breadth is about 0.234 H and shoulder-to-hip about 1.4, so the skeletal shoulder ring is narrower than the finished figure and the deltoids make up the difference |
+| Four-legged animals | breed-standard **length against shoulder height**, about 10 to 8.5; the chest reaching halfway down the leg; muzzle 4.5 to the skull's 5.5; and the hind leg angulated, stifle forward and hock back |
+| Birds | a chicken measured at **40–60 cm long, 25–37 cm tall, 11.5–18 cm across** — a long narrow thing, not a ball, with the thigh buried in the feathers and only the shank showing |
 
 The checks enforce them: one of them fails if the figure stops being eight heads
 tall, another if the dog stops being longer than it is tall.
+
+## Lofts, in detail
+
+`loft()` describes a part by its **cross-sections** rather than by a primitive:
+a list of rings, each with its own centre, half-width and half-depth. Each ring
+is laid perpendicular to the path through its neighbours, so a curved stack of
+rings makes a curved form rather than a sheared one.
+
+That is what lets a torso taper and a limb carry a muscle. It is also why the
+figure stands in a slight A-pose: the gap between arm and waist is most of what
+makes a standing figure read as a person rather than a slab, and it only exists
+if the arm is held off the body.
+
+Two masses have to **overlap** for the remesh to blend them — meeting at a plane
+leaves a crease, which is what the ridge at a dog's waist and the seam at a
+figure's navel were. And a limb's topmost ring has to be *narrower* than the
+body it enters, or it punches a plate out through the flank; the blending mass
+that sits there is a deltoid on a person and a shoulder blade or haunch on a dog.
 
 ## The sculpt pass, in detail
 
@@ -113,6 +137,12 @@ Three things have to survive it, and each is handled:
   the rig exact rather than guessed.
 - **Thin things.** A voxel grid swallows anything thinner than about two voxels.
   Those parts are measured and left alone rather than dissolved.
+
+The grid is sized **per colour group**, not once for the whole model. One tiny
+part — the tip of an ear — used to drag the global voxel size down until the
+body was remeshed at a millimetre, which both exploded the triangle count and
+left every intersection as a visible crease, because a grid that fine simply
+reproduces the parts it was given.
 
 Two masses have to *overlap* for a remesh to blend them — meeting at a plane
 leaves a crease. That is why the pelvis and the ribcage are built taller than
@@ -137,7 +167,7 @@ server.py         keeps Blender alive, serves the page, streams progress,
                   and fetches reference photographs from Wikimedia Commons
 blender/
   recipes.py      words  ->  a build plan        (no Blender needed, so testable)
-  build.py        a build plan  ->  geometry
+  build.py        a build plan  ->  geometry, including lofts
   sculpt.py       loose parts   ->  one continuous form
   rig.py          geometry      ->  a skeleton and weights
   anim.py         a move        ->  keyframes; and .fbx retargeting
