@@ -3,5 +3,16 @@
 #   boneka              normal
 #   boneka --no-browser leave the browser alone
 set -euo pipefail
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Follow the symlink back to where boneka actually lives. ${BASH_SOURCE[0]} is
+# the name this was *called* by, not the file it points at, so a symlink in
+# ~/.local/bin would otherwise send us looking for server.py next to the link.
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  HERE="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$HERE/$SOURCE"
+done
+DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+
 exec python3 "$DIR/server.py" "$@"

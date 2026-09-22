@@ -745,24 +745,24 @@ for (const move of MOVES) {
 
 /* ── next door ───────────────────────────────────────────────────────
  *
- * When boneka is running inside sanggar there is another tool beside it, and
+ * When boneka is running inside bengkel there is another tool beside it, and
  * a model that has just been rigged has an obvious next step. So: export a
- * .glb the way the export buttons do, and when it lands, ask sanggar to open
+ * .glb the way the export buttons do, and when it lands, ask bengkel to open
  * it in gerak.
  *
- * Outside sanggar `window.sanggar` does not exist, the button never appears,
+ * Outside bengkel `window.bengkel` does not exist, the button never appears,
  * and nothing about boneka changes. That is the whole of the coupling.
  */
 
 let handingOver = null;
 
 function sendToGerak(file, what) {
-  if (!window.sanggar) return;
-  window.sanggar.handOver('gerak', file, what || '');
+  if (!window.bengkel) return;
+  window.bengkel.handOver('gerak', file, what || '');
   say('Sent to gerak — click a joint and start posing', true);
 }
 
-if (window.sanggar) {
+if (window.bengkel) {
   $('handover-row').hidden = false;
 
   const button = $('to-gerak');
@@ -798,7 +798,7 @@ if (window.sanggar) {
   refreshButtons();
 
   // A model handed back from gerak.
-  window.sanggar.onReceive((payload) => {
+  window.bengkel.onReceive((payload) => {
     if (!payload || !payload.path) return;
     say('gerak sent back ' + payload.path.split('/').pop()
       + ' — open it from the session folder', true);
