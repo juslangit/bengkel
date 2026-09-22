@@ -401,6 +401,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
     private var window: NSWindow!
     private var rail: NSView!
     private var stage: NSView!
+    private var waiting: NSView!
+    private var waitingLabel: NSTextField!
+    private var waitingHint: NSTextField!
     private var home: WKWebView!
     private var current = "home"
 
@@ -513,6 +516,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
         stage.autoresizingMask = [.width, .height]
         content.addSubview(stage)
 
+        buildWaiting()
+
         home = makeWebView()
         home.loadFileURL(Paths.web.appendingPathComponent("home.html"),
                          allowingReadAccessTo: Paths.resources)
@@ -524,6 +529,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
         window.setFrameUsingName("bengkel.window")
         window.makeKeyAndOrderFront(nil)
     }
+
+    /// Something to look at while a tool is starting.
+    ///
+    /// boneka keeps a headless Blender behind it and takes a few seconds to
+    /// come up. Without this the pane is simply blank for that time, which
+    /// does not look like waiting — it looks broken.
+    private func buildWaiting() {
+        waiting = NSView(frame: stage.bounds)
+        waiting.autoresizingMask = [.width, .height]
+        waiting.wantsLayer = true
+        waiting.layer?.backgroundColor = (NSColor(hex: "#14161b") ?? .black).cgColor
+        waiting.isHidden = true
+
+        waitingLabel = NSTextField(labelWithString: "")
+        waitingLabel.font = .systemFont(ofSize: 15, weight: .medium)
+        waitingLabel.textColor = NSColor(white: 0.78, alpha: 1)
+        waitingLabel.alignment = .center
+        waitingLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        waitingHint = NSTextField(labelWithString: "")
+        waitingHint.font = .systemFont(ofSize: 12.5)
+        waitingHint.textColor = NSColor(white: 0.46, alpha: 1)
+        waitingHint.alignment = .center
+        waitingHint.translatesAutoresizingMaskIntoConstraints = false
+
+        let spinner = NSProgressIndicator()
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.startAnimation(nil)
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+
+        waiting.addSubview(spinner)
+        waiting.addSubview(waitingLabel)
+        waiting.addSubview(waitingHint)
+        NSLayoutConstraint.activate([
+            spinner.centerXAnchor.constraint(equalTo: waiting.centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: waiting.centerYAnchor, constant: -34),
+            waitingLabel.centerXAnchor.constraint(equalTo: waiting.centerXAnchor),
+            waitingLabel.topAnchor.constraint(equalTo: spinner.bottomAnchor, constant: 16),
+            waitingHint.centerXAnchor.constraint(equalTo: waiting.centerXAnchor),
+            waitingHint.topAnchor.constraint(equalTo: waitingLabel.bottomAnchor, constant: 7),
+            waitingHint.widthAnchor.constraint(lessThanOrEqualToConstant: 420),
+        ])
+        stage.addSubview(waiting)
+    }
+
+    private func showWaiting(for tool: Tool) {
+        waitingLabel.stringValue = "Starting \(tool.name)…"
+        waitingHint.stringValue = tool.heavy
+            ? "It keeps a Blender running behind it, so it takes a moment the first time."
+            : ""
+        waiting.isHidden = false
+        stage.addSubview(waiting, positioned: .above, relativeTo: nil)
+    }
+
+    private func hideWaiting() { waiting.isHidden = true }
 
     private func makeWebView() -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -562,7 +623,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
         for (key, view) in views { view.isHidden = key != id }
         window.title = id == "home" ? "bengkel" : "bengkel — \(id)"
 
-        guard id != "home" else { return }
+        guard id != "home" else { hideWaiting(); return }
         guard let tool = tools.first(where: { $0.id == id }) else { return }
 
         if views[id] == nil {
@@ -573,6 +634,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
             startServer(for: tool)
         }
         views[id]?.isHidden = false
+
+        // Blank until its page arrives, so say what is happening.
+        if servers[tool.id]?.url == nil { showWaiting(for: tool) } else { hideWaiting() }
     }
 
     private func startServer(for tool: Tool) {
@@ -589,8 +653,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
             self.tellHome()
         }
         server.onFailure = { [weak self] message in
-            self?.items[tool.id]?.setLive(false)
-            self?.say("\(tool.name) could not start", message)
+            guard let self else { return }
+            self.items[tool.id]?.setLive(false)
+            if self.current == tool.id {
+                self.waitingLabel.stringValue = "\(tool.name) could not start"
+                self.waitingHint.stringValue = message
+            }
+            self.say("\(tool.name) could not start", message)
         }
         server.start()
     }
@@ -897,6 +966,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
     // ── navigation ──────────────────────────────────────────────────
 
     func webView(_ view: WKWebView, didFinish navigation: WKNavigation!) {
+        if let id = views.first(where: { $0.value === view })?.key, id == current {
+            hideWaiting()
+        }
         if view === home {
             if let script {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in

@@ -92,17 +92,61 @@ if [ $? -eq 0 ]; then bad "a tool was started before it was asked for"
 else ok "no tool is started until you open one — boneka holds a Blender open, and that can wait"; fi
 
 echo
-echo "── opening a tool ──────────────────────────────────────────────"
+echo "── opening each tool ───────────────────────────────────────────"
 
-run_app 14 --open gerak
-grep -q "gerak: started" "$LOG";        check $? "opening gerak starts its server"
-grep -q "gerak: ready on port" "$LOG"
-check $? "$(grep -o 'gerak: ready on port [0-9]*' "$LOG" | head -1) — a port the system chose, not gerak's usual one"
-grep -q "gerak: shut down" "$LOG";      check $? "and it stops when bengkel does"
+# Every tool, not just the convenient one. The first version of this suite
+# only ever opened gerak, and boneka shipped advertising port 0 - a page that
+# could never load - because nothing here had ever asked for it.
+TOOLS=$(python3 -c "
+import json
+print(' '.join(t['id'] for t in json.load(open('tools.json'))['tools']))")
 
-sleep 2
-pgrep -f "bengkel/gerak/server.py" > /dev/null 2>&1
-if [ $? -eq 0 ]; then bad "a tool server was left running"; else ok "nothing was left running"; fi
+for tool in $TOOLS; do
+  run_app 18 --open "$tool"
+
+  grep -q "$tool: started" "$LOG"
+  check $? "opening $tool starts its server"
+
+  port=$(grep -o "$tool: ready on port [0-9]*" "$LOG" | head -1 | awk '{print $NF}')
+  { [ -n "$port" ] && [ "$port" != "0" ]; }
+  check $? "$tool reports the port it really bound${port:+ ($port)}, not the one it was asked for"
+
+  grep -q "$tool: shut down" "$LOG"
+  check $? "and $tool stops when bengkel does"
+
+  sleep 2
+  if pgrep -f "bengkel/$tool/server.py" > /dev/null 2>&1; then
+    bad "$tool was left running"
+  else
+    ok "and $tool left nothing running"
+  fi
+done
+
+echo
+echo "── each tool's page really appears ─────────────────────────────"
+
+# A server that is up is not the same as a page that appears. boneka's did
+# not, and the log said "ready" the whole time.
+for tool in $TOOLS; do
+  run_app 22 --open "$tool" --js "
+    return (async () => {
+      for (let i = 0; i < 200 && document.body.innerText.trim().length < 40; i++) {
+        await new Promise(r => setTimeout(r, 100));
+      }
+      return JSON.stringify({
+        bridge: !!window.bengkel,
+        words: document.body.innerText.trim().split(/\s+/).length,
+      });
+    })()"
+
+  answer=$(grep "SCRIPT RESULT" "$LOG" | tail -1)
+  echo "$answer" | grep -q '"bridge":true'
+  check $? "$tool's page loads inside bengkel and can see it"
+
+  words=$(echo "$answer" | grep -o '"words":[0-9]*' | cut -d: -f2)
+  { [ -n "$words" ] && [ "$words" -gt 20 ]; }
+  check $? "and $tool's pane has something on it - ${words:-0} words, not blank"
+done
 
 echo
 echo "── carrying a model from one tool to the other ─────────────────"
