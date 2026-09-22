@@ -553,7 +553,15 @@ function handle(ev) {
 
     case 'exported':
       logLine('exported ' + ev.file);
-      say('Saved ' + ev.file.split('/').pop() + ' in the session folder', true);
+      // A .glb asked for by the "Animate it in gerak" button is not announced
+      // as a save - it goes straight next door.
+      if (handingOver && ev.file.toLowerCase().endsWith('.glb')) {
+        const going = handingOver;
+        handingOver = null;
+        sendToGerak(ev.file, going);
+      } else {
+        say('Saved ' + ev.file.split('/').pop() + ' in the session folder', true);
+      }
       break;
 
     case 'local3d':
@@ -733,3 +741,67 @@ for (const move of MOVES) {
   connect();
   checkLocal3d();
 })();
+
+
+/* ── next door ───────────────────────────────────────────────────────
+ *
+ * When boneka is running inside sanggar there is another tool beside it, and
+ * a model that has just been rigged has an obvious next step. So: export a
+ * .glb the way the export buttons do, and when it lands, ask sanggar to open
+ * it in gerak.
+ *
+ * Outside sanggar `window.sanggar` does not exist, the button never appears,
+ * and nothing about boneka changes. That is the whole of the coupling.
+ */
+
+let handingOver = null;
+
+function sendToGerak(file, what) {
+  if (!window.sanggar) return;
+  window.sanggar.handOver('gerak', file, what || '');
+  say('Sent to gerak — click a joint and start posing', true);
+}
+
+if (window.sanggar) {
+  $('handover-row').hidden = false;
+
+  const button = $('to-gerak');
+  button.onclick = async () => {
+    if (!state.built) return;
+    button.disabled = true;
+    const was = button.textContent;
+    button.textContent = 'Exporting…';
+    handingOver = state.name || '';
+    try {
+      await send('export', { format: 'glb' });
+    } catch (err) {
+      handingOver = null;
+      say('Could not export: ' + err.message, false);
+    } finally {
+      button.textContent = was;
+      button.disabled = false;
+    }
+  };
+
+  /* Whatever turns the export buttons on should turn this one on too, so
+   * wrap the one function that decides. Giving it the `export` class instead
+   * would have hooked it to the export click handler, which expects a format
+   * in its dataset and would have exported nothing. */
+  const buttonsWere = refreshButtons;
+  refreshButtons = function (...args) {
+    buttonsWere.apply(this, args);
+    button.disabled = !state.ready || state.busy || !state.built;
+    button.title = state.rigged
+      ? 'Export a .glb and open it in gerak'
+      : 'It has no skeleton yet — gerak can give it one, or press Auto-Rig first';
+  };
+  refreshButtons();
+
+  // A model handed back from gerak.
+  window.sanggar.onReceive((payload) => {
+    if (!payload || !payload.path) return;
+    say('gerak sent back ' + payload.path.split('/').pop()
+      + ' — open it from the session folder', true);
+    logLine('received from gerak: ' + payload.path);
+  });
+}
