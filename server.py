@@ -817,22 +817,29 @@ def open_server():
     """
     Take the first free port from the usual one upwards, so a second boneka
     opens beside the first instead of dying on a stack trace.
+
+    BONEKA_PORT=0 means "any free port", which is how bengkel starts boneka so
+    it never collides with one already open in a browser. The port we end up
+    on then has nothing to do with the one we asked for, so it is read back
+    off the socket - everything after this, the address boneka prints and the
+    origin check on every request, is built from PORT.
     """
     global PORT
-    for port in range(PORT, PORT + 10):
+    wanted = PORT
+    for port in range(wanted, wanted + 10):
         try:
             httpd = Server(("127.0.0.1", port), Handler)
         except OSError as exc:
             if exc.errno not in (48, 98):               # in use, macOS / Linux
                 raise
             continue
-        if port != PORT:
-            log("port %d was busy, using %d instead" % (PORT, port))
-        PORT = port
+        PORT = httpd.server_address[1]                  # the one we really got
+        if wanted and PORT != wanted:
+            log("port %d was busy, using %d instead" % (wanted, PORT))
         return httpd
     raise SystemExit(
         "ports %d-%d are all busy. boneka is probably already running - "
-        "open the address it printed, or stop it first." % (PORT, PORT + 9))
+        "open the address it printed, or stop it first." % (wanted, wanted + 9))
 
 
 def main():
