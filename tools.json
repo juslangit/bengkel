@@ -1,7 +1,10 @@
 {
   "_comment": [
     "The tools bengkel hosts. Adding a fourth is an entry here, not a code",
-    "change — which is the point of keeping it as data.",
+    "",
+    "The order here is the order of the pipeline, and it is the order they",
+    "appear on the rail: find it, make it, move it. A tool added in the middle",
+    "goes in the middle.",
     "",
     "Each tool is a local server and a page, started by bengkel and stopped",
     "with it. `ready` is the line the server prints when it is listening; it",
@@ -12,8 +15,21 @@
     "they disagree about the spelling, which is exactly the sort of thing a",
     "config file should absorb rather than a program remember."
   ],
-
   "tools": [
+    {
+      "id": "pasar",
+      "name": "pasar",
+      "tagline": "Find materials",
+      "blurb": "Sketchfab, Poly Haven and Texturelabs from one search box. What you bring home lands in the workshop.",
+      "symbol": "magnifyingglass",
+      "accent": "#4fc08d",
+      "root": "~/Desktop/project/3d/bengkel/pasar",
+      "server": "server.py",
+      "noOpen": "--no-open",
+      "portEnv": "PASAR_PORT",
+      "ready": "@@PASAR-READY@@",
+      "heavy": false
+    },
     {
       "id": "boneka",
       "name": "boneka",

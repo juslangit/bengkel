@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>pasar</title>
+<link rel="stylesheet" href="/common/shell.css">
+<link rel="stylesheet" href="/web/pasar.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><span class="mark"></span><span class="wordmark">pasar</span></div>
+  <div class="subject" id="subject">Materials for whatever you are making</div>
+  <div class="topbar-actions">
+    <button class="btn btn-small" id="tab-search">Search</button>
+    <button class="btn btn-small" id="tab-mine">What I have</button>
+  </div>
+</header>
+
+<main class="market">
+  <div class="searchbar">
+    <input type="search" id="q" placeholder="chair, oak, sunset, brick…" autofocus>
+    <div class="seg" id="where">
+      <button class="seg-btn is-on" data-where="all">Everything</button>
+    </div>
+    <button class="btn btn-primary" id="go">Search</button>
+  </div>
+
+  <p class="hint" id="note">
+    Sketchfab for models, Poly Haven for lighting, Texturelabs for surfaces —
+    all three at once. Anything you bring home lands in the workshop and can be
+    handed straight to the next tool.
+  </p>
+
+  <div class="results" id="results"></div>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+<div class="working" id="working" hidden>
+  <div class="working-inner">
+    <div class="spinner"></div>
+    <p class="what"></p>
+    <p class="why"></p>
+  </div>
+</div>
+
+<script>window.BENGKEL_TOKEN = "__BENGKEL_TOKEN__";</script>
+<script type="module" src="/web/app.js"></script>
+</body>
+</html>
