@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>jaring</title>
+<link rel="stylesheet" href="/common/shell.css">
+<link rel="stylesheet" href="/web/jaring.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "/common/vendor/three.module.js",
+    "three/addons/": "/common/vendor/"
+  }
+}
+</script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><span class="mark"></span><span class="wordmark">jaring</span></div>
+  <div class="subject" id="subject">Make a heavy model light enough to use</div>
+  <div class="topbar-actions">
+    <button class="btn btn-small" id="open">Open a model</button>
+    <button class="btn btn-small" id="tab-mine">What I have made</button>
+    <button class="btn btn-small" id="send" hidden>Send it on</button>
+  </div>
+</header>
+
+<main class="bench">
+
+  <section class="stage">
+    <canvas id="stage"></canvas>
+    <div class="pane-label" id="label-before">
+      <span class="which">Before</span>
+      <span class="count" id="count-before">nothing open</span>
+    </div>
+    <div class="pane-label is-right" id="label-after">
+      <span class="which">After</span>
+      <span class="count" id="count-after">&mdash;</span>
+    </div>
+    <div class="split"></div>
+    <div class="pane-empty" id="after-empty">
+      <p>Nothing here yet.</p>
+      <p class="quiet">Open a model, choose how fine, and press Remesh.</p>
+    </div>
+  </section>
+
+  <aside class="controls">
+
+    <div class="block">
+      <h2>The model</h2>
+      <div class="chosen" id="chosen">
+        <p class="quiet">Nothing open. Press <b>Open a model</b>, or drop one
+        in this window.</p>
+      </div>
+    </div>
+
+    <div class="block">
+      <h2>How fine?</h2>
+      <div class="presets" id="presets"></div>
+
+      <label class="slider">
+        <span class="row">
+          <span>Quad size</span>
+          <output id="quad-out">2.0 cm</output>
+        </span>
+        <input type="range" id="quad" min="0.4" max="12" step="0.2" value="2">
+        <span class="row quiet">
+          <span>finer, heavier</span><span>coarser, lighter</span>
+        </span>
+      </label>
+
+      <p class="estimate" id="estimate">
+        How wide one square of the new surface should be. A 2 cm quad on a
+        person-sized model is about a knuckle.
+      </p>
+    </div>
+
+    <div class="block">
+      <h2>What comes with it</h2>
+
+      <label class="line">
+        <span>Normal map</span>
+        <select id="texture">
+          <option value="1024">1K</option>
+          <option value="2048" selected>2K</option>
+          <option value="4096">4K</option>
+          <option value="0">none</option>
+        </select>
+      </label>
+
+      <label class="line">
+        <span>Distance versions</span>
+        <select id="lods">
+          <option value="0">none</option>
+          <option value="1">1</option>
+          <option value="2" selected>2</option>
+          <option value="3">3</option>
+        </select>
+      </label>
+
+      <label class="line check">
+        <input type="checkbox" id="symmetry" checked>
+        <span>Keep it symmetrical</span>
+      </label>
+
+      <label class="line check">
+        <input type="checkbox" id="sharp" checked>
+        <span>Keep the hard edges</span>
+      </label>
+    </div>
+
+    <button class="btn btn-primary btn-big" id="go" disabled>Remesh it</button>
+
+    <div class="report" id="report" hidden></div>
+
+  </aside>
+</main>
+
+<div class="drop" id="drop" hidden><p>Let go to open it</p></div>
+<div class="toast" id="toast" hidden></div>
+<div class="working" id="working" hidden>
+  <div class="working-inner">
+    <div class="spinner"></div>
+    <p class="what"></p>
+    <p class="why"></p>
+  </div>
+</div>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet-inner">
+    <header>
+      <input type="search" id="find" placeholder="Search your models…">
+      <button class="btn btn-small" id="sheet-close">Close</button>
+    </header>
+    <div class="sheet-list" id="sheet-list"></div>
+  </div>
+</div>
+
+<script>window.BENGKEL_TOKEN = "__BENGKEL_TOKEN__";</script>
+<script type="module" src="/web/app.js"></script>
+</body>
+</html>

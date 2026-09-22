@@ -34,6 +34,12 @@
 
 * { box-sizing: border-box; }
 
+/* A class that sets `display` beats the browser's own [hidden] rule, and
+ * almost every control here sets one. Without this a button written as
+ * `<button class="btn" hidden>` is hidden in the DOM and plainly visible on
+ * screen - which no test that reads `.hidden` will ever notice. */
+[hidden] { display: none !important; }
+
 html, body {
   height: 100%;
   margin: 0;

@@ -82,12 +82,17 @@ check $? "every tool it lists is actually on the disk"
 echo
 echo "── starting and stopping ───────────────────────────────────────"
 
+# The list it should read is whatever tools.json says, not a list written out
+# here as well. Two copies of the same list is how a tool gets added to one of
+# them and the suite goes on passing without ever opening it.
+REGISTERED=$(python3 -c 'import json;print(", ".join(t["id"] for t in json.load(open("tools.json"))["tools"]))')
+
 run_app 8
-grep -q "tools: boneka, gerak" "$LOG"
-check $? "it reads its tool list"
+grep -q "tools: $REGISTERED" "$LOG"
+check $? "it reads its tool list ($REGISTERED)"
 [ -f "$WORK/shot.png" ]
 check $? "the studio screen renders"
-grep -qE "boneka: started|gerak: started" "$LOG"
+grep -qE "$(python3 -c 'import json;print("|".join(t["id"] + ": started" for t in json.load(open("tools.json"))["tools"]))')" "$LOG"
 if [ $? -eq 0 ]; then bad "a tool was started before it was asked for"
 else ok "no tool is started until you open one — boneka holds a Blender open, and that can wait"; fi
 
@@ -168,8 +173,9 @@ if [ -n "$MODEL" ]; then
     })()"
 
   answer=$(grep "SCRIPT RESULT" "$LOG" | tail -1)
-  echo "$answer" | grep -q '"tools":\["boneka","gerak"\]'
-  check $? "the bridge reports both tools: ${answer#*SCRIPT RESULT: }"
+  EXPECTED=$(python3 -c 'import json;print(json.dumps([t["id"] for t in json.load(open("tools.json"))["tools"]], separators=(",", ":")))')
+  echo "$answer" | grep -qF "\"tools\":$EXPECTED"
+  check $? "the bridge reports every tool: ${answer#*SCRIPT RESULT: }"
   grep -q "→ gerak: $(basename "$MODEL")" "$LOG"
   check $? "bengkel carried $(basename "$MODEL") to gerak"
   grep -q "handed $(basename "$MODEL") to gerak" "$LOG"

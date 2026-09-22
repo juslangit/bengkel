@@ -416,7 +416,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
 
     func applicationDidFinishLaunching(_ note: Notification) {
         let args = CommandLine.arguments
-        if let i = args.firstIndex(of: "--js"), i + 1 < args.count { script = args[i + 1] }
+        if let i = args.firstIndex(of: "--js"), i + 1 < args.count {
+            // Either the code itself, or a file holding it. A path evaluated
+            // as source is a syntax error reported only as "a JavaScript
+            // exception occurred", which sends you looking in the wrong place.
+            let given = args[i + 1]
+            script = FileManager.default.fileExists(atPath: given)
+                ? (try? String(contentsOfFile: given, encoding: .utf8)) ?? given
+                : given
+        }
         if let i = args.firstIndex(of: "--shot"), i + 1 < args.count {
             shotPath = args[i + 1]
             if i + 2 < args.count, let s = TimeInterval(args[i + 2]) { shotDelay = s }
@@ -969,19 +977,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
         if let id = views.first(where: { $0.value === view })?.key, id == current {
             hideWaiting()
         }
-        if view === home {
-            if let script {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                    self?.runScript(script)
-                }
+
+        // The test script and the photograph wait for the pane they are aimed
+        // at, which is the one --open named, or home when it named nothing.
+        // Firing them off home's load instead meant that with --open they
+        // started against a pane still navigating, and the page arriving threw
+        // the running script away mid-sentence - reported only as "a
+        // JavaScript exception occurred", which says nothing about the cause.
+        let target = pendingTool.flatMap { views[$0] } ?? home
+        guard view === target, !driven else { return }
+        driven = true
+
+        if let script {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.runScript(script)
             }
-            if let shotPath {
-                DispatchQueue.main.asyncAfter(deadline: .now() + shotDelay) { [weak self] in
-                    self?.photograph(into: shotPath)
-                }
+        }
+        if let shotPath {
+            DispatchQueue.main.asyncAfter(deadline: .now() + shotDelay) { [weak self] in
+                self?.photograph(into: shotPath)
             }
         }
     }
+
+    /// Whether the run-once test hooks above have already been set going.
+    private var driven = false
 
     func webView(_ view: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler decide: @escaping (WKNavigationActionPolicy) -> Void) {

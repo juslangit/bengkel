@@ -11,12 +11,16 @@ native/build.sh --install     # build it and put it in /Applications
 native/build.sh --run         # ...and open it
 ```
 
-Right now it holds two:
+The rail is the pipeline, in order — **find it, make it, clean it up, move it**:
 
-| | |
-|---|---|
-| **boneka** | Type what you want and watch Blender build it, part by part. One button gives it a skeleton. |
-| **gerak** | Click a joint, turn it, key the pose. FK and IK, and a timeline that works out the frames between. |
+| | | |
+|---|---|---|
+| **pasar** | *Find materials* | Sketchfab, Poly Haven and Texturelabs from one search box, with the licence on the card before you download. |
+| **boneka** | *Make and rig* | Type what you want and watch Blender build it, part by part. One button gives it a skeleton. |
+| **jaring** | *Remesh and bake* | Turn a half-million-triangle download into something a game can carry, with its detail baked into a normal map. |
+| **gerak** | *Pose and animate* | Click a joint, turn it, key the pose. FK and IK, and a timeline that works out the frames between. |
+
+Adding a fifth is an entry in `tools.json`, not a change to any code.
 
 ---
 
@@ -36,17 +40,27 @@ Narrow, on purpose:
 - **Remembers what you are making** — see below.
 
 **Each tool is still a whole program.** `gerak.app` is still in
-`/Applications`, and `boneka` and `gerak` still work in a terminal. Nothing
-about them changed except that they now notice when they are next door to each
-other.
+`/Applications`, and `pasar`, `boneka`, `jaring` and `gerak` all still work in
+a terminal on their own. Nothing about them changed except that they now
+notice when they are next door to each other.
 
-## How the two fit together
+**What they share lives in `common/`** — one server foundation with the token
+and origin checks, the model library, and the way to run a headless Blender
+job, plus the look and the bridge that every page loads. Five tools each
+reinventing those is how one app comes to look and behave like five.
 
-1. **boneka makes it** — type what you want, watch Blender build it, press
-   once for a skeleton.
-2. **gerak moves it** — click a joint, turn it, key the pose. Or give a
+## How they fit together
+
+1. **pasar finds it** — one search over three libraries. What you bring home
+   lands in the workshop, with a note of its licence beside it.
+2. **boneka makes it** — or type what you want instead, watch Blender build
+   it, press once for a skeleton.
+3. **jaring cleans it up** — a downloaded model is built to be looked at, not
+   used. One question, in centimetres, and it comes back in even quads with
+   UVs and its detail baked into a normal map.
+4. **gerak moves it** — click a joint, turn it, key the pose. Or give a
    skeleton to something that has none.
-3. **Out it goes** — `.glb` for Godot, `.fbx` for Unreal, `.blend` to finish
+5. **Out it goes** — `.glb` for Godot, `.fbx` for Unreal, `.blend` to finish
    by hand, or a rendered video.
 
 **boneka → gerak.** A button in boneka's *Take it away* section says **Animate
