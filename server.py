@@ -42,6 +42,11 @@ BLENDER = os.environ.get(
     "BONEKA_BLENDER", "/Applications/Blender.app/Contents/MacOS/Blender")
 MARK = "@@BK@@"
 PORT = int(os.environ.get("BONEKA_PORT", "8777"))
+
+# One machine-readable line at startup, so a program that launches boneka -
+# sanggar does - can find out which port it settled on and what this run's
+# token is, instead of scraping the human-readable log.
+READY_MARK = "@@BONEKA-READY@@"
 TOKEN = secrets.token_urlsafe(18)
 
 
@@ -840,6 +845,8 @@ def main():
     log("Blender:", BLENDER)
     log("session:", session)
     log("open:", url)
+    print("%s%s" % (READY_MARK, json.dumps(
+        {"url": url, "port": PORT, "token": TOKEN, "session": session})), flush=True)
     if "--no-browser" not in sys.argv:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     try:
