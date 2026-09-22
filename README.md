@@ -12,7 +12,7 @@ native/build.sh --run         # ...and open it
 ```
 
 The rail is the pipeline, in order — **find it, make it, clean it up, dress
-it, move it**:
+it, check it, move it**:
 
 | | | |
 |---|---|---|
@@ -20,6 +20,7 @@ it, move it**:
 | **boneka** | *Make and rig* | Type what you want and watch Blender build it, part by part. One button gives it a skeleton. |
 | **jaring** | *Remesh and bake* | Turn a half-million-triangle download into something a game can carry, with its detail baked into a normal map. |
 | **kulit** | *Colour and surface* | One row per part: a colour and what it is made of. Real detail, normal and roughness maps, not a flat slab. |
+| **periksa** | *Check before it ships* | Its size, its origin, its weight, its UVs — read straight out of the file in milliseconds, judged against what it is for. |
 | **gerak** | *Pose and animate* | Click a joint, turn it, key the pose. FK and IK, and a timeline that works out the frames between. |
 
 Adding a fifth is an entry in `tools.json`, not a change to any code.
@@ -42,8 +43,8 @@ Narrow, on purpose:
 - **Remembers what you are making** — see below.
 
 **Each tool is still a whole program.** `gerak.app` is still in
-`/Applications`, and `pasar`, `boneka`, `jaring`, `kulit` and `gerak` all still
-work in a terminal on their own. Nothing about them changed except that they now
+`/Applications`, and `pasar`, `boneka`, `jaring`, `kulit`, `periksa` and
+`gerak` all still work in a terminal on their own. Nothing about them changed except that they now
 notice when they are next door to each other.
 
 **What they share lives in `common/`** — one server foundation with the token
@@ -62,9 +63,11 @@ reinventing those is how one app comes to look and behave like five.
    UVs and its detail baked into a normal map.
 4. **kulit dresses it** — what jaring hands over is clean and grey. One row
    per part: a colour, and what the thing is made of.
-5. **gerak moves it** — click a joint, turn it, key the pose. Or give a
+5. **periksa checks it** — is it a believable size, does its origin sit on the
+   floor, does it have UVs, is it within budget for what it is for.
+6. **gerak moves it** — click a joint, turn it, key the pose. Or give a
    skeleton to something that has none.
-6. **Out it goes** — `.glb` for Godot, `.fbx` for Unreal, `.blend` to finish
+7. **Out it goes** — `.glb` for Godot, `.fbx` for Unreal, `.blend` to finish
    by hand, or a rendered video.
 
 **boneka → gerak.** A button in boneka's *Take it away* section says **Animate

@@ -1,0 +1,150 @@
+/* periksa — to inspect.
+ *
+ * Yellow, the colour of looking closely at something, and the last one the
+ * other tools have not taken.
+ */
+
+:root { --tool: #d9c25a; }
+
+.bench {
+  position: absolute;
+  inset: var(--topbar-h) 0 0 0;
+  display: grid;
+  grid-template-columns: 1fr 392px;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+}
+
+.stage { position: relative; background: var(--bg-sunken); min-width: 0; min-height: 0; overflow: hidden; }
+.stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+
+.stage-label {
+  position: absolute; top: 12px; left: 14px; z-index: 2;
+  pointer-events: none;
+  font: 500 0.86rem ui-monospace, "SF Mono", monospace;
+  color: var(--ink-faint);
+  text-shadow: 0 1px 6px rgba(0,0,0,.75);
+}
+.stage-empty {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; text-align: center; padding: 24px;
+  pointer-events: none; color: var(--ink-dim);
+}
+.stage-empty p { margin: 0; max-width: 40ch; }
+
+.controls {
+  border-left: 1px solid var(--line);
+  background: var(--bg-panel);
+  overflow-y: auto;
+  padding: 18px 18px 26px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.quiet { color: var(--ink-faint); font-size: 0.85rem; margin: 0; line-height: 1.5; }
+
+/* ── the one-line answer ───────────────────────────────────────────── */
+
+.verdict {
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line);
+  background: var(--bg-sunken);
+  padding: 14px 15px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.verdict .big { font-size: 1.05rem; font-weight: 650; }
+.verdict .small { font-size: 0.85rem; color: var(--ink-dim); line-height: 1.5; }
+.verdict.is-bad   { border-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+.verdict.is-bad .big { color: var(--warn); }
+.verdict.is-watch { border-color: color-mix(in srgb, #e8b04b 55%, transparent); }
+.verdict.is-watch .big { color: #e8b04b; }
+.verdict.is-good  { border-color: color-mix(in srgb, var(--good) 55%, transparent); }
+.verdict.is-good .big { color: var(--good); }
+
+/* ── one card per thing worth saying ───────────────────────────────── */
+
+.findings { display: flex; flex-direction: column; gap: 9px; }
+
+.finding {
+  border-radius: var(--r);
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  background: var(--bg-raised);
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.finding.is-bad   { border-left-color: var(--warn); }
+.finding.is-watch { border-left-color: #e8b04b; }
+.finding.is-good  { border-left-color: var(--good); }
+
+.finding .what { font-size: 0.92rem; font-weight: 600; line-height: 1.4; }
+.finding.is-bad .what   { color: #ffd3d2; }
+.finding.is-watch .what { color: #e8c98b; }
+.finding .why  { font-size: 0.84rem; color: var(--ink-dim); line-height: 1.55; margin: 0; }
+.finding .todo {
+  font-size: 0.84rem; line-height: 1.5; margin: 0;
+  color: var(--ink);
+  padding-left: 9px;
+  border-left: 2px solid var(--line);
+}
+
+/* Everything that is already fine, folded away: it is reassurance, not news. */
+.fine summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+  padding: 4px 2px;
+  list-style: none;
+}
+.fine summary::-webkit-details-marker { display: none; }
+.fine summary::before { content: "▸ "; }
+.fine[open] summary::before { content: "▾ "; }
+.fine .findings { margin-top: 8px; }
+
+/* ── the plain numbers ─────────────────────────────────────────────── */
+
+.facts {
+  margin: 0;
+  display: grid; grid-template-columns: auto 1fr; gap: 3px 14px;
+  font-size: 0.85rem;
+  padding-top: 4px;
+  border-top: 1px solid var(--line-soft);
+}
+.facts dt { color: var(--ink-faint); }
+.facts dd { margin: 0; text-align: right; font: 500 0.83rem ui-monospace, "SF Mono", monospace; }
+
+.drop {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(22,24,29,.86);
+  border: 3px dashed var(--tool);
+  font-size: 1.15rem;
+}
+
+.sheet {
+  position: fixed; inset: 0; z-index: 70;
+  background: rgba(10,11,14,.66);
+  display: flex; align-items: center; justify-content: center;
+  padding: 40px 20px;
+}
+.sheet-inner {
+  background: var(--bg-panel); border: 1px solid var(--line);
+  border-radius: var(--r-lg); width: min(760px, 100%); max-height: 100%;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.sheet-inner header { display: flex; gap: 10px; padding: 13px 14px; border-bottom: 1px solid var(--line); }
+.sheet-inner header input { flex: 1; }
+.sheet-list { overflow-y: auto; padding: 8px; }
+.pick {
+  display: flex; align-items: baseline; gap: 10px; width: 100%;
+  padding: 9px 11px; border: 1px solid transparent; border-radius: var(--r);
+  background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.pick:hover { background: var(--bg-raised); border-color: var(--line); }
+.pick .n { font-weight: 600; flex: 1; word-break: break-all; }
+.pick .w { color: var(--ink-faint); font-size: 0.78rem; }
+.pick .t { font: 500 0.78rem ui-monospace, "SF Mono", monospace; color: var(--ink-faint); white-space: nowrap; }
+
+@media (max-width: 1000px) {
+  .bench { grid-template-columns: 1fr; grid-template-rows: minmax(240px, 1fr) auto; }
+  .controls { border-left: none; border-top: 1px solid var(--line); }
+}

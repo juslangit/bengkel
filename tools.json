@@ -3,8 +3,8 @@
     "The tools bengkel hosts. Adding a fourth is an entry here, not a code",
     "",
     "The order here is the order of the pipeline, and it is the order they",
-    "appear on the rail: find it, make it, clean it up, dress it, move it. A tool",
-    "added in the middle goes in the middle.",
+    "appear on the rail: find it, make it, clean it up, dress it, check it, move",
+    "it. A tool added in the middle goes in the middle.",
     "",
     "Each tool is a local server and a page, started by bengkel and stopped",
     "with it. `ready` is the line the server prints when it is listening; it",
@@ -71,6 +71,20 @@
       "portEnv": "KULIT_PORT",
       "ready": "@@KULIT-READY@@",
       "heavy": true
+    },
+    {
+      "id": "periksa",
+      "name": "periksa",
+      "tagline": "Check before it ships",
+      "blurb": "A last look before a model goes into a game: its size, its origin, its weight, its UVs. It reads the file rather than opening it.",
+      "symbol": "checklist",
+      "accent": "#d9c25a",
+      "root": "~/Desktop/project/3d/bengkel/periksa",
+      "server": "server.py",
+      "noOpen": "--no-open",
+      "portEnv": "PERIKSA_PORT",
+      "ready": "@@PERIKSA-READY@@",
+      "heavy": false
     },
     {
       "id": "gerak",

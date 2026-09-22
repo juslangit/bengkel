@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>periksa</title>
+<link rel="stylesheet" href="/common/shell.css">
+<link rel="stylesheet" href="/web/periksa.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "/common/vendor/three.module.js",
+    "three/addons/": "/common/vendor/"
+  }
+}
+</script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><span class="mark"></span><span class="wordmark">periksa</span></div>
+  <div class="subject" id="subject">A last look before it goes into a game</div>
+  <div class="topbar-actions">
+    <div class="seg" id="role"></div>
+    <button class="btn btn-small" id="open">Open a model</button>
+    <button class="btn btn-small" id="send" hidden>Send it on</button>
+  </div>
+</header>
+
+<main class="bench">
+
+  <section class="stage">
+    <canvas id="stage"></canvas>
+    <div class="stage-label" id="label">nothing open</div>
+    <div class="stage-empty" id="empty">
+      <p>Nothing open.</p>
+      <p class="quiet">Press <b>Open a model</b>, or drop a <code>.glb</code>
+      in this window. It takes a few milliseconds — periksa reads the file
+      rather than opening it in Blender.</p>
+    </div>
+  </section>
+
+  <aside class="controls">
+    <div class="verdict" id="verdict" hidden></div>
+    <div class="findings" id="findings">
+      <p class="quiet">Open a model and everything worth saying about it
+      appears here — what is wrong, what to watch, and what is already fine.</p>
+    </div>
+    <dl class="facts" id="facts" hidden></dl>
+  </aside>
+</main>
+
+<div class="drop" id="drop" hidden><p>Let go to look at it</p></div>
+<div class="toast" id="toast" hidden></div>
+<div class="working" id="working" hidden>
+  <div class="working-inner">
+    <div class="spinner"></div>
+    <p class="what"></p>
+    <p class="why"></p>
+  </div>
+</div>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet-inner">
+    <header>
+      <input type="search" id="find" placeholder="Search your models…">
+      <button class="btn btn-small" id="sheet-close">Close</button>
+    </header>
+    <div class="sheet-list" id="sheet-list"></div>
+  </div>
+</div>
+
+<script>window.BENGKEL_TOKEN = "__BENGKEL_TOKEN__";</script>
+<script type="module" src="/web/app.js"></script>
+</body>
+</html>
