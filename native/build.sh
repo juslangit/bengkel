@@ -1,32 +1,32 @@
 #!/usr/bin/env bash
 #
-# Build sanggar.app.
+# Build bengkel.app.
 #
-# sanggar carries no engine of its own: it starts the tools where they already
+# bengkel carries no engine of its own: it starts the tools where they already
 # live, on disk, so the bundle holds only the studio page, the tool list and
 # the program that joins them. That means a change to boneka or gerak is live
-# in sanggar the next time it starts, with nothing to rebuild.
+# in bengkel the next time it starts, with nothing to rebuild.
 #
 # There is no Xcode project and nothing to install: swiftc comes with the
 # command line tools, and everything else here is assembling a folder in the
 # shape macOS expects an application to be.
 #
-#   native/build.sh              build it into native/build/sanggar.app
+#   native/build.sh              build it into native/build/bengkel.app
 #   native/build.sh --install    ...and put it in /Applications
 #   native/build.sh --run        ...and open it
 #
 # An app bundle is just a folder:
 #
-#   sanggar.app/Contents/Info.plist          what it is called and what it opens
-#   sanggar.app/Contents/MacOS/sanggar         the compiled program
-#   sanggar.app/Contents/Resources/          the icon, and sanggar's own engine
+#   bengkel.app/Contents/Info.plist          what it is called and what it opens
+#   bengkel.app/Contents/MacOS/bengkel         the compiled program
+#   bengkel.app/Contents/Resources/          the icon, and bengkel's own engine
 #
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 BUILD="$HERE/build"
-APP="$BUILD/sanggar.app"
+APP="$BUILD/bengkel.app"
 CONTENTS="$APP/Contents"
 
 INSTALL=0
@@ -42,7 +42,7 @@ done
 say() { printf '  %s\n' "$*"; }
 
 echo
-echo "building sanggar.app"
+echo "building bengkel.app"
 
 # ── start clean ─────────────────────────────────────────────────────
 rm -rf "$APP"
@@ -51,7 +51,7 @@ mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 # ── the icon ────────────────────────────────────────────────────────
 # macOS wants every size in one .icns. The 1024 px source is rendered from
 # native/icon.html; re-render it with build.sh --icon if the drawing changes.
-ICONSET="$BUILD/sanggar.iconset"
+ICONSET="$BUILD/bengkel.iconset"
 rm -rf "$ICONSET"
 mkdir -p "$ICONSET"
 
@@ -69,9 +69,9 @@ for size in 16 32 64 128 256 512; do
   sips -z $double $double "$HERE/icon-1024.png" \
     --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null 2>&1
 done
-iconutil -c icns "$ICONSET" -o "$CONTENTS/Resources/sanggar.icns"
+iconutil -c icns "$ICONSET" -o "$CONTENTS/Resources/bengkel.icns"
 rm -rf "$ICONSET"
-say "icon: $(du -h "$CONTENTS/Resources/sanggar.icns" | cut -f1)"
+say "icon: $(du -h "$CONTENTS/Resources/bengkel.icns" | cut -f1)"
 
 # ── what macOS needs to know about it ───────────────────────────────
 cat > "$CONTENTS/Info.plist" <<'PLIST'
@@ -80,11 +80,11 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key>                 <string>sanggar</string>
-  <key>CFBundleDisplayName</key>          <string>sanggar</string>
-  <key>CFBundleExecutable</key>           <string>sanggar</string>
-  <key>CFBundleIdentifier</key>           <string>com.luqmanhakeem.sanggar</string>
-  <key>CFBundleIconFile</key>             <string>sanggar</string>
+  <key>CFBundleName</key>                 <string>bengkel</string>
+  <key>CFBundleDisplayName</key>          <string>bengkel</string>
+  <key>CFBundleExecutable</key>           <string>bengkel</string>
+  <key>CFBundleIdentifier</key>           <string>com.luqmanhakeem.bengkel</string>
+  <key>CFBundleIconFile</key>             <string>bengkel</string>
   <key>CFBundlePackageType</key>          <string>APPL</string>
   <key>CFBundleShortVersionString</key>   <string>1.0</string>
   <key>CFBundleVersion</key>              <string>1</string>
@@ -97,7 +97,7 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
   <!-- The window draws its own top bar over a transparent title strip. -->
   <key>NSRequiresAquaSystemAppearance</key> <false/>
 
-  <!-- sanggar talks to its own server on 127.0.0.1 over plain HTTP. Without
+  <!-- bengkel talks to its own server on 127.0.0.1 over plain HTTP. Without
        this, App Transport Security refuses the connection and the window
        comes up empty. -->
   <key>NSAppTransportSecurity</key>
@@ -115,10 +115,10 @@ swiftc -O \
   -target arm64-apple-macosx13.0 \
   -framework AppKit -framework WebKit -framework UniformTypeIdentifiers \
   "$HERE/Sources/main.swift" \
-  -o "$CONTENTS/MacOS/sanggar"
-say "compiled: $(du -h "$CONTENTS/MacOS/sanggar" | cut -f1)"
+  -o "$CONTENTS/MacOS/bengkel"
+say "compiled: $(du -h "$CONTENTS/MacOS/bengkel" | cut -f1)"
 
-# ── sanggar's own engine, carried inside the bundle ───────────────────
+# ── bengkel's own engine, carried inside the bundle ───────────────────
 # The app is self-contained: it runs the copy in its own Resources folder,
 # never the working tree, so moving or reinstalling it changes nothing.
 cp "$ROOT/tools.json" "$CONTENTS/Resources/"
@@ -138,7 +138,7 @@ say "built $APP"
 
 # ── install ─────────────────────────────────────────────────────────
 if [ $INSTALL -eq 1 ]; then
-  DEST="/Applications/sanggar.app"
+  DEST="/Applications/bengkel.app"
   rm -rf "$DEST"
   cp -R "$APP" "$DEST"
   # Tell Finder about it, so the icon and the "Open With" entry appear now

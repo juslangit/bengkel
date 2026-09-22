@@ -1,6 +1,6 @@
-//  sanggar — the studio.
+//  bengkel — the studio.
 //
-//  A sanggar is a workshop where people make things. This one is the front
+//  A bengkel is a workshop where people make things. This one is the front
 //  door to Luqman's creative tools: one window, one icon in the Dock, and a
 //  rail down the side to move between them.
 //
@@ -14,7 +14,7 @@
 //      without either of them knowing the other's address
 //
 //  Each tool stays a complete program that runs perfectly well on its own.
-//  sanggar is where they meet, not what they are.
+//  bengkel is where they meet, not what they are.
 
 import AppKit
 import WebKit
@@ -58,10 +58,10 @@ enum Paths {
     static var web: URL { resources.appendingPathComponent("web") }
     static var toolsFile: URL { resources.appendingPathComponent("tools.json") }
 
-    /// Your work: the pieces sanggar keeps track of.
+    /// Your work: the pieces bengkel keeps track of.
     static var data: URL {
         let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Documents/sanggar")
+            .appendingPathComponent("Documents/bengkel")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
@@ -70,7 +70,7 @@ enum Paths {
         let dir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Logs")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("sanggar.log")
+        return dir.appendingPathComponent("bengkel.log")
     }
 }
 
@@ -90,7 +90,7 @@ func log(_ message: String) {
 // a running tool
 // ───────────────────────────────────────────────────────────────────
 
-/// One tool's server: started on first use, stopped when sanggar quits.
+/// One tool's server: started on first use, stopped when bengkel quits.
 ///
 /// Started on first use rather than at launch because boneka keeps a Blender
 /// running behind it, and there is no sense holding that open on an 8 GB
@@ -114,7 +114,7 @@ final class ToolServer {
     func start() {
         guard !running else { return }
         guard FileManager.default.fileExists(atPath: tool.serverURL.path) else {
-            onFailure?("\(tool.name) is not where sanggar expected it: \(tool.serverURL.path)")
+            onFailure?("\(tool.name) is not where bengkel expected it: \(tool.serverURL.path)")
             return
         }
         running = true
@@ -128,7 +128,7 @@ final class ToolServer {
         environment["PYTHONUNBUFFERED"] = "1"
         environment["GERAK_PARENT"] = String(ProcessInfo.processInfo.processIdentifier)
         environment["BONEKA_PARENT"] = String(ProcessInfo.processInfo.processIdentifier)
-        environment["SANGGAR"] = "1"
+        environment["BENGKEL"] = "1"
         process.environment = environment
 
         process.standardOutput = output
@@ -145,7 +145,7 @@ final class ToolServer {
             if self.url == nil {
                 DispatchQueue.main.async {
                     self.onFailure?("\(self.tool.name) stopped before it was ready "
-                        + "(exit \(proc.terminationStatus)). See ~/Library/Logs/sanggar.log")
+                        + "(exit \(proc.terminationStatus)). See ~/Library/Logs/bengkel.log")
                 }
             } else {
                 log("\(self.tool.id): stopped, exit \(proc.terminationStatus)")
@@ -157,7 +157,7 @@ final class ToolServer {
             log("\(tool.id): started, pid \(process.processIdentifier)")
         } catch {
             running = false
-            onFailure?("sanggar could not start \(tool.name): \(error.localizedDescription)")
+            onFailure?("bengkel could not start \(tool.name): \(error.localizedDescription)")
         }
     }
 
@@ -177,7 +177,7 @@ final class ToolServer {
                 let data = json.data(using: .utf8),
                 let doc = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                 let text = doc["url"] as? String,
-                let ready = URL(string: text + "&sanggar=1")
+                let ready = URL(string: text + "&bengkel=1")
             else {
                 log("\(tool.id): could not read its ready line — \(line)")
                 return
@@ -441,7 +441,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
             let data = try? Data(contentsOf: Paths.toolsFile),
             let list = try? JSONDecoder().decode(ToolList.self, from: data)
         else {
-            fail("sanggar could not read tools.json out of its own bundle.")
+            fail("bengkel could not read tools.json out of its own bundle.")
             return
         }
         tools = list.tools
@@ -455,7 +455,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
             contentRect: NSRect(x: 0, y: 0, width: 1480, height: 940),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false)
-        window.title = "sanggar"
+        window.title = "bengkel"
         window.minSize = NSSize(width: 1120, height: 700)
         window.appearance = NSAppearance(named: .darkAqua)
         window.titlebarAppearsTransparent = true
@@ -519,9 +519,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
         place(home)
         views["home"] = home
 
-        window.setFrameAutosaveName("sanggar.window")
+        window.setFrameAutosaveName("bengkel.window")
         window.center()
-        window.setFrameUsingName("sanggar.window")
+        window.setFrameUsingName("bengkel.window")
         window.makeKeyAndOrderFront(nil)
     }
 
@@ -529,10 +529,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
         let config = WKWebViewConfiguration()
         config.preferences.setValue(true, forKey: "developerExtrasEnabled")
 
-        // The one way a tool's page can reach sanggar. Everything the tools
+        // The one way a tool's page can reach bengkel. Everything the tools
         // do to each other goes through this.
         let bridge = WKUserContentController()
-        bridge.add(self, name: "sanggar")
+        bridge.add(self, name: "bengkel")
         bridge.addUserScript(WKUserScript(
             source: Self.bridgeScript, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         config.userContentController = bridge
@@ -560,7 +560,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
         current = id
         for (key, item) in items { item.choose(key == id) }
         for (key, view) in views { view.isHidden = key != id }
-        window.title = id == "home" ? "sanggar" : "sanggar — \(id)"
+        window.title = id == "home" ? "bengkel" : "bengkel — \(id)"
 
         guard id != "home" else { return }
         guard let tool = tools.first(where: { $0.id == id }) else { return }
@@ -597,13 +597,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
 
     // ── the bridge ──────────────────────────────────────────────────
 
-    /// Injected into every page sanggar hosts, before anything else runs.
+    /// Injected into every page bengkel hosts, before anything else runs.
     ///
-    /// A tool checks for `window.sanggar` and, if it is not there, behaves
+    /// A tool checks for `window.bengkel` and, if it is not there, behaves
     /// exactly as it always did — which is what keeps each of them a whole
     /// program rather than a component of this one.
     private static let bridgeScript = """
-    window.sanggar = {
+    window.bengkel = {
       inside: true,
       _waiting: {},
       _next: 1,
@@ -611,7 +611,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
         return new Promise((resolve) => {
           const id = this._next++;
           this._waiting[id] = resolve;
-          window.webkit.messageHandlers.sanggar.postMessage(
+          window.webkit.messageHandlers.bengkel.postMessage(
             { id, what, payload: payload || {} });
         });
       },
@@ -705,7 +705,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
 
     /// A tool may name a file relative to its own working folder — boneka
     /// does, because everything it makes lives in the session it is working
-    /// in and it has never needed the absolute path. sanggar knows where that
+    /// in and it has never needed the absolute path. bengkel knows where that
     /// session is, from the line the tool printed when it started.
     private func resolve(_ path: String, from tool: String) -> String {
         if path.hasPrefix("/") { return path }
@@ -740,7 +740,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
         let json = (try? JSONSerialization.data(withJSONObject: [value]))
             .map { String(decoding: $0, as: UTF8.self) } ?? "[null]"
         let inner = String(json.dropFirst().dropLast())
-        web.evaluateJavaScript("window.sanggar._answer(\(id), \(inner))")
+        web.evaluateJavaScript("window.bengkel._answer(\(id), \(inner))")
     }
 
     /// Carry a file from one tool to another: show the target, wait for it to
@@ -764,7 +764,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
         let payload: [String: Any] = ["path": path, "note": note]
         let json = (try? JSONSerialization.data(withJSONObject: payload))
             .map { String(decoding: $0, as: UTF8.self) } ?? "{}"
-        web.evaluateJavaScript("window.sanggar && window.sanggar._deliver(\(json))") { _, error in
+        web.evaluateJavaScript("window.bengkel && window.bengkel._deliver(\(json))") { _, error in
             if error != nil {
                 // The page may not have finished loading; try once more.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -786,13 +786,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
         let main = NSMenu()
 
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "About sanggar", action: #selector(about), keyEquivalent: "")
+        appMenu.addItem(withTitle: "About bengkel", action: #selector(about), keyEquivalent: "")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Show the log", action: #selector(showLog), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Hide sanggar", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        appMenu.addItem(withTitle: "Quit sanggar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        main.addItem(submenu: appMenu, title: "sanggar")
+        appMenu.addItem(withTitle: "Hide bengkel", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: "Quit bengkel", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        main.addItem(submenu: appMenu, title: "bengkel")
 
         // Edit, forwarded to whichever tool is showing. A tool that does not
         // answer simply does nothing, which is the right behaviour for one
@@ -836,12 +836,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
 
     @objc private func about() {
         let alert = NSAlert()
-        alert.messageText = "sanggar"
+        alert.messageText = "bengkel"
         alert.informativeText = """
-            A sanggar is a workshop where things are made. This one holds your \
+            A bengkel is a workshop where things are made. This one holds your \
             creative tools in one window: \(tools.map(\.name).joined(separator: " and ")).
 
-            Each of them still runs perfectly well on its own. sanggar is where \
+            Each of them still runs perfectly well on its own. bengkel is where \
             they meet.
             """
         alert.addButton(withTitle: "OK")
@@ -865,7 +865,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
     func webView(_ view: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
                  initiatedByFrame frame: WKFrameInfo, completionHandler done: @escaping () -> Void) {
         let alert = NSAlert()
-        alert.messageText = "sanggar"
+        alert.messageText = "bengkel"
         alert.informativeText = message
         alert.addButton(withTitle: "OK")
         alert.beginSheetModal(for: window) { _ in done() }
@@ -965,7 +965,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
         log("FAILED: \(message)")
         let alert = NSAlert()
         alert.alertStyle = .critical
-        alert.messageText = "sanggar could not start"
+        alert.messageText = "bengkel could not start"
         alert.informativeText = message
         alert.addButton(withTitle: "Quit")
         alert.runModal()

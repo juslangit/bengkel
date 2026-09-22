@@ -1,6 +1,6 @@
 /* The studio screen.
  *
- * It knows nothing about boneka or gerak. It asks sanggar what tools exist
+ * It knows nothing about boneka or gerak. It asks bengkel what tools exist
  * and draws a card for each, so a third tool appears here the moment it is
  * added to tools.json — no change to this file.
  */
@@ -19,7 +19,7 @@ function card(tool) {
     </div>
     <p class="tagline">${escape(tool.tagline)}</p>
     <p class="blurb">${escape(tool.blurb)}</p>`;
-  button.onclick = () => window.sanggar.open(tool.id);
+  button.onclick = () => window.bengkel.open(tool.id);
   return button;
 }
 
@@ -29,12 +29,12 @@ function escape(text) {
 }
 
 async function draw() {
-  if (!window.sanggar) {
-    list.innerHTML = '<p class="waiting">This page is the inside of the sanggar app. '
-      + 'Open sanggar to use it.</p>';
+  if (!window.bengkel) {
+    list.innerHTML = '<p class="waiting">This page is the inside of the bengkel app. '
+      + 'Open bengkel to use it.</p>';
     return;
   }
-  const tools = await window.sanggar.tools();
+  const tools = await window.bengkel.tools();
   list.innerHTML = '';
   for (const tool of tools) list.append(card(tool));
 }
@@ -81,7 +81,7 @@ function pieceRow(piece) {
     go.textContent = tool;
     go.disabled = !piece.exists;
     go.title = `Open this in ${tool}`;
-    go.onclick = () => window.sanggar.openPiece(piece.id, tool);
+    go.onclick = () => window.bengkel.openPiece(piece.id, tool);
     row.append(go);
   }
 
@@ -89,15 +89,15 @@ function pieceRow(piece) {
   drop.className = 'piece-drop';
   drop.textContent = '×';
   drop.title = 'Forget this — the files are not touched';
-  drop.onclick = async () => { await window.sanggar.forgetPiece(piece.id); draw(); };
+  drop.onclick = async () => { await window.bengkel.forgetPiece(piece.id); draw(); };
   row.append(drop);
 
   return row;
 }
 
 async function drawWork() {
-  if (!window.sanggar) return;
-  const pieces = await window.sanggar.pieces();
+  if (!window.bengkel) return;
+  const pieces = await window.bengkel.pieces();
   workSection.hidden = pieces.length === 0;
   piecesList.innerHTML = '';
   for (const piece of pieces) piecesList.append(pieceRow(piece));
@@ -105,7 +105,7 @@ async function drawWork() {
 
 async function drawAll() { await draw(); await drawWork(); }
 
-// sanggar calls this whenever a tool comes up or a piece changes.
+// bengkel calls this whenever a tool comes up or a piece changes.
 window.refreshStudio = drawAll;
 window.refreshTools = drawAll;
 

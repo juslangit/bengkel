@@ -1,8 +1,8 @@
-# sanggar
+# bengkel
 
 **Your workshop. Everything you make, in one window.**
 
-A *sanggar* is a workshop where people make things. This one is the front door
+A *bengkel* is a workshop where people make things. This one is the front door
 to your creative tools: one window, one icon in the Dock, and a rail down the
 side to move between them.
 
@@ -62,7 +62,7 @@ among three thousand.
 
 ## What you are making
 
-Sanggar keeps a short list of the pieces you are working on, shown on the
+Bengkel keeps a short list of the pieces you are working on, shown on the
 studio screen. Each one remembers the file as it stands and a note of what
 each tool did to it, so you can pick it up again in either.
 
@@ -70,7 +70,7 @@ A piece is written when you do something **deliberate** — hand a model to the
 other tool, or save a clip. Not when you merely open something: a list of
 everything you have ever looked at is not a list of what you are making.
 
-It lives at `~/Documents/sanggar/pieces.json`, in plain readable JSON. The
+It lives at `~/Documents/bengkel/pieces.json`, in plain readable JSON. The
 tools keep their own files exactly where they always did; this is a thread
 through them, not a new place to store things. Forgetting a piece on the
 studio screen removes it from the list and touches no files.
@@ -78,7 +78,7 @@ studio screen removes it from the list and touches no files.
 ## Adding a third tool
 
 `tools.json` is the whole of it. A tool that is a local server and a page
-needs an entry there and nothing else — sanggar draws its card, gives it a
+needs an entry there and nothing else — bengkel draws its card, gives it a
 place on the rail, starts it on demand and includes it in the hand-off:
 
 ```json
@@ -103,18 +103,18 @@ listening — one line carrying the port it settled on and that run's token,
 because neither is known until it starts. Both tools here do, and adding it to
 boneka was a two-line change.
 
-## How a tool talks to sanggar
+## How a tool talks to bengkel
 
-`window.sanggar` is injected into every page sanggar hosts, before anything
+`window.bengkel` is injected into every page bengkel hosts, before anything
 else runs. A tool checks whether it is there and, if it is not, behaves
 exactly as it always did — which is what keeps each of them a whole program
 rather than a component of this one.
 
 ```js
-if (window.sanggar) {
-  await window.sanggar.handOver('gerak', path, 'knight with a sword');
-  await window.sanggar.note({ path, name, what: 'saved the clip "walk"' });
-  window.sanggar.onReceive(({ path, note }) => open(path));
+if (window.bengkel) {
+  await window.bengkel.handOver('gerak', path, 'knight with a sword');
+  await window.bengkel.note({ path, name, what: 'saved the clip "walk"' });
+  window.bengkel.onReceive(({ path, note }) => open(path));
 }
 ```
 
@@ -125,7 +125,7 @@ neither can be reached from the other by accident.
 ## Where things are
 
 ```
-tools.json              which tools sanggar holds
+tools.json              which tools bengkel holds
 web/                    the studio screen
 native/Sources/         one Swift file
 native/build.sh         assembles the .app; no Xcode project
@@ -134,9 +134,9 @@ tests/run.sh            the tests
 
 The bundle carries the studio page and the tool list and **no copy of any
 tool** — it runs them where they live on disk, so a change to boneka or gerak
-is live the next time sanggar starts, with nothing to rebuild.
+is live the next time bengkel starts, with nothing to rebuild.
 
-The log is at `~/Library/Logs/sanggar.log`, and the app's own menu has a
+The log is at `~/Library/Logs/bengkel.log`, and the app's own menu has a
 **Show the log** item.
 
 ## Running the tests
@@ -146,7 +146,7 @@ tests/run.sh
 ```
 
 There is nothing here about joints or keyframes — boneka and gerak have their
-own suites. This checks only what sanggar adds, which is exactly what breaks
+own suites. This checks only what bengkel adds, which is exactly what breaks
 when two programs are made to live in one window: that it reads its tool list,
 that a tool starts when asked and on a port it chose, that nothing is left
 running afterwards, that a file handed from one tool arrives in the other, and

@@ -1,6 +1,11 @@
-# What the build makes, not what sanggar is.
+# What the build makes, not what bengkel is.
 native/build/
 __pycache__/
 *.pyc
 .DS_Store
 .env
+
+# boneka and gerak live in here but keep their own git histories — they are
+# whole programs that still run alone, and bengkel carries no copy of either.
+boneka/
+gerak/
