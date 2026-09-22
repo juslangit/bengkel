@@ -135,8 +135,33 @@ else
   [ -n "$AFTER" ] && [ "$AFTER" -lt "$BEFORE" ]
   check $? "and comes out lighter ($BEFORE → $AFTER triangles)"
 
-  [ "$(printf '%s' "$OUT" | field how)" = "quads" ]
-  check $? "Quadriflow took it, rather than falling back to voxels"
+  # The check that matters most, and the one that was missing.
+  #
+  # Quadriflow returns FINISHED on a mesh that is not watertight and hands
+  # back shards: a different shape, at a different size, in a different
+  # place. A 1.3 metre paladin came back 8 metres across, and every other
+  # check here passed - it was lighter, it had UVs, it had a baked map, it
+  # was on disk. A remesh of a thing is the same size as the thing.
+  python3 - "$WORK/remesh.json" <<'PY'
+import json, sys
+answer = json.load(open(sys.argv[1]))
+was, now = answer["was"], answer["now"]
+for axis, (a, b) in enumerate(zip(now, was)):
+    assert abs(a - b) <= 0.05 * b, (
+        "axis %d changed from %.3f to %.3f" % (axis, b, a))
+PY
+  check $? "it comes back the same size it went in"
+
+  HOW=$(printf '%s' "$OUT" | field how)
+  [ "$HOW" = "quads" ] || [ "$HOW" = "voxels" ]
+  check $? "it says which way it remeshed ($HOW)"
+
+  # A fallback that happens silently is the whole problem, so it has to
+  # be said out loud.
+  if [ "$HOW" = "voxels" ]; then
+    printf '%s' "$OUT" | field notes | grep -q watertight
+    check $? "and when it falls back to voxels it says why"
+  fi
 
   GLB=$(printf '%s' "$OUT" | field glb)
   [ -f "$GLB" ]
@@ -175,6 +200,43 @@ PY
   MINE=$(GET "/api/mine?" | python3 -c 'import json,sys;print(len(json.load(sys.stdin)["items"]))')
   [ "${MINE:-0}" -gt 0 ]
   check $? "what it made turns up in What I have made ($MINE)"
+fi
+
+echo
+echo "── a mesh Quadriflow can actually take ─────────────────────────"
+
+# Everything above went down the voxel path, because every model on this
+# machine is a downloaded game character and not one of them is closed.
+# The quad path needs a watertight lump made for the purpose, or it is
+# never tested at all.
+if [ "${1:-}" = "--quick" ] || [ ! -x "$BLENDER" ]; then
+  skip "the quad path"
+else
+  "$BLENDER" --background --factory-startup --python tests/make-blob.py \
+    -- "$WORK/blob.glb" > "$WORK/blob.log" 2>&1
+  [ -f "$WORK/blob.glb" ]
+  check $? "a watertight lump is built to remesh ($(grep -o 'BLOB.*' "$WORK/blob.log" | head -1))"
+
+  curl -s -X POST -H "Origin: $ORIGIN" -H "X-Bengkel-Token: $TOKEN" \
+       -H "Content-Type: application/json" \
+       -d "{\"path\": \"$WORK/blob.glb\"}" "$BASE/api/permit" > /dev/null
+  BLOB=$(POST /api/remesh "$(python3 -c 'import json,sys;print(json.dumps({
+    "path": sys.argv[1], "quad_cm": 3.0, "texture": 1024, "lods": 0,
+    "bake": True, "symmetry": True, "sharp": True}))' "$WORK/blob.glb")")
+  echo "$BLOB" > "$WORK/blob.json"
+
+  [ "$(printf '%s' "$BLOB" | field how)" = "quads" ]
+  check $? "a closed surface is remeshed in quads, not voxels"
+
+  python3 - "$WORK/blob.json" <<'PY'
+import json, sys
+answer = json.load(open(sys.argv[1]))
+assert answer["ok"], answer.get("problems")
+for a, b in zip(answer["now"], answer["was"]):
+    assert abs(a - b) <= 0.05 * b, (answer["was"], answer["now"])
+assert answer["after"] < answer["before"], (answer["before"], answer["after"])
+PY
+  check $? "and it too comes back lighter and the same size"
 fi
 
 echo

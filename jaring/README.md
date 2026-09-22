@@ -37,17 +37,21 @@ The presets are a starting point, not a mode — move the slider and they go dar
 
 ## What one press does
 
-1. **Remesh** — Quadriflow rebuilds the surface in even quads. A downloaded
-   model is usually full of holes and stray internal faces, and Quadriflow
-   refuses those; when it does, jaring remeshes with voxels instead and says
-   so, because a cancelled remesh that is reported as success hands you the
-   original mesh and then bakes a flat, useless map from it.
-2. **Unwrap** — UVs on the new surface, with a few pixels between islands so
+1. **Weld** — merge vertices that sit in the same place. glTF has no shared
+   vertices, so a model that has been through a `.glb` arrives as loose
+   triangles that merely touch: a sphere exported and re-imported comes back
+   with 32,512 non-manifold edges. Without this step no model is ever closed
+   and the quad path might as well not exist.
+2. **Remesh** — Quadriflow rebuilds the surface in even quads, if the model is
+   closed. A real downloaded character usually is not — armour pieces, hair
+   cards and eyes are separate open shells — and then jaring remeshes with
+   voxels instead and says so.
+3. **Unwrap** — UVs on the new surface, with a few pixels between islands so
    the bake cannot bleed from one to its neighbour.
-3. **Bake** — the original's detail into a tangent-space normal map. The rays
+4. **Bake** — the original's detail into a tangent-space normal map. The rays
    travel 2% of the model's own diagonal: far enough to reach the detail, not
    far enough to punch through and hit the far side.
-4. **LODs** — the distance versions, each decimated from the one above rather
+5. **LODs** — the distance versions, each decimated from the one above rather
    than remeshed from the original, so they all share the one baked map.
 
 ## Before and after, side by side
@@ -76,6 +80,25 @@ model standing inside one another.
 
 Inside bengkel, the result goes on to **gerak** with one press.
 
+## The two ways Quadriflow lies
+
+Neither raises anything, and both were found by looking at the screen rather
+than by a test.
+
+**It cancels rather than raising** when it dislikes a mesh, leaving an
+untouched copy that looks like a result — which then gets a flat, useless
+normal map baked from it.
+
+**It returns FINISHED and hands back shards** when the mesh is not watertight:
+a different shape, at a different size, in a different place. A 1.3 metre
+paladin came back 8 metres across, and every other check passed — it was
+lighter, it had UVs, it had a baked map, it was on disk.
+
+So jaring measures the result. A remesh of a thing is the same size as the
+thing; anything else is thrown away and done again with voxels. The size in
+and the size out are reported with every result, and the test suite asserts
+they agree.
+
 ## When it comes out heavier
 
 It will, if you pick a quad size finer than the model needed — a 12,000
@@ -100,9 +123,14 @@ tests/run.sh           everything, about two minutes
 tests/run.sh --quick   skip the Blender run
 ```
 
-14 checks plus 15 in the browser. The ones that matter are about the result
-rather than the exit code: that a real model comes out lighter than it went in,
-that Quadriflow took it rather than silently falling back, that the normal map
-holds real detail rather than being a flat sheet, that each LOD has its own
-file and is lighter than the one above, and that the number the page shows
-before the remesh is the number the remesher uses.
+19 checks plus 15 in the browser. The ones that matter are about the result
+rather than the exit code: that a real model comes out **the same size** it
+went in, and lighter; that a fallback to voxels is said out loud; that the
+normal map holds real detail rather than being a flat sheet; that each LOD has
+its own file and is lighter than the one above; and that the number the page
+shows before the remesh is the number the remesher uses.
+
+The suite builds its own watertight lump with Blender
+(`tests/make-blob.py`), because every model on this machine is a downloaded
+game character and not one of them is closed — without it the quad path would
+never be exercised at all.

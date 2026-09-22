@@ -99,6 +99,18 @@ def triangles(obj):
     return sum(max(len(p.vertices) - 2, 1) for p in obj.data.polygons)
 
 
+def extent(obj):
+    """How big the object is in the world, in metres, as (x, y, z).
+
+    Reported with every result so that "it came back the same size it went in"
+    is something a test can check rather than something you notice by eye a
+    week later.
+    """
+    corners = [obj.matrix_world @ Vector(c) for c in obj.bound_box]
+    return [round(max(c[i] for c in corners) - min(c[i] for c in corners), 4)
+            for i in range(3)]
+
+
 # --------------------------------------------------------------------------
 # loading, and getting down to one object
 # --------------------------------------------------------------------------
@@ -145,14 +157,49 @@ def as_one(meshes):
             if mod.type in ("ARMATURE",):
                 obj.modifiers.remove(mod)
 
+    # A model imported from glTF arrives parented into one or two empties that
+    # carry the whole scene's rotation and scale. Only the mesh is exported at
+    # the end, so anything still living on a parent is silently dropped - and
+    # a model whose root node scaled it by a hundredth comes back a hundred
+    # times too big, looking like a remesh that went mad rather than a
+    # transform that went missing. Clearing the parent keeps the transform on
+    # the mesh itself; applying it then makes it real geometry, which is also
+    # what the area and diagonal measured below depend on.
+    bpy.ops.object.parent_clear(type="CLEAR_KEEP_TRANSFORM")
+    for obj in meshes:
+        obj.select_set(True)
+    bpy.context.view_layer.objects.active = meshes[0]
+
     if len(meshes) > 1:
         bpy.ops.object.join()
     joined = bpy.context.view_layer.objects.active
-    # A model imported from glTF is usually parented into a rotated empty; the
-    # transform has to be real geometry before any of the measuring below means
-    # anything.
-    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    weld(joined)
     return joined
+
+
+def weld(obj, threshold=0.0001):
+    """Merge vertices that are in the same place, and face the same way out.
+
+    glTF has no shared vertices: every triangle carries its own three corners,
+    because each corner holds its own normal and UV. A model that has been
+    through a .glb therefore arrives as loose triangles that merely touch, and
+    **every single edge in it is non-manifold** — a sphere exported and
+    re-imported came back with 32,512 of them.
+
+    Quadriflow needs a closed surface. Without this step it never gets one, no
+    matter what the model is, so every remesh fell back to voxels and the quad
+    path might as well not have existed. A tenth of a millimetre is far below
+    anything modelled on purpose and far above floating-point noise.
+
+    Normals are made consistent at the same time: welded triangles that face
+    opposite ways are still a hole as far as a remesher is concerned.
+    """
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.remove_doubles(threshold=threshold)
+    bpy.ops.mesh.normals_make_consistent(inside=False)
+    bpy.ops.object.mode_set(mode="OBJECT")
 
 
 # --------------------------------------------------------------------------
@@ -160,27 +207,34 @@ def as_one(meshes):
 # --------------------------------------------------------------------------
 
 def remesh(high, quad_cm, symmetry, sharp):
-    """Rebuild the surface out of even quads. Returns (low, how)."""
+    """Rebuild the surface out of even quads. Returns (low, how, target, area)."""
     area = surface_area(high)
     if area <= 0.0:
         raise RuntimeError("that model has no surface area to remesh")
     target = faces_for_quad_size(area, quad_cm)
+    want = extent(high)
+    holes = nonmanifold_edges(high.data)
 
-    low = high.copy()
-    low.data = high.data.copy()
-    low.name = "LP_" + high.name
-    low.data.name = low.name
-    for collection in high.users_collection:
-        collection.objects.link(low)
+    def fresh_copy():
+        copy = high.copy()
+        copy.data = high.data.copy()
+        copy.name = "LP_" + high.name
+        copy.data.name = copy.name
+        for collection in high.users_collection:
+            collection.objects.link(copy)
+        # Materials come off: it is about to be given one of its own with the
+        # baked map in it, and the original's twelve would fight it.
+        copy.data.materials.clear()
+        return copy
 
-    for obj in bpy.context.scene.objects:
-        obj.select_set(False)
-    low.select_set(True)
-    bpy.context.view_layer.objects.active = low
+    def alone(obj):
+        for other in bpy.context.scene.objects:
+            other.select_set(False)
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
 
-    # Materials come off the copy: it is about to be given one of its own with
-    # the baked map in it, and the original's twelve materials would fight it.
-    low.data.materials.clear()
+    low = fresh_copy()
+    alone(low)
 
     try:
         outcome = bpy.ops.object.quadriflow_remesh(
@@ -190,17 +244,34 @@ def remesh(high, quad_cm, symmetry, sharp):
     except RuntimeError:
         outcome = {"CANCELLED"}
 
-    if "FINISHED" in outcome:
+    # Two ways Quadriflow fails, and it announces neither.
+    #
+    # It cancels rather than raising when it dislikes a mesh, leaving an
+    # untouched copy that looks like a result and then bakes a flat, useless
+    # normal map from it. And on a mesh that is not watertight - which every
+    # downloaded game character is, being a dozen open shells - it returns
+    # FINISHED and hands back shards: a different shape, at a different size,
+    # in a different place. A paladin 1.3 metres tall came back 8 metres
+    # across, and nothing anywhere said so.
+    #
+    # Comparing the result's own size against what went in catches both, and
+    # catches whatever third way there is that has not been seen yet. A real
+    # remesh of a thing is the same size as the thing.
+    kept_shape = (
+        "FINISHED" in outcome
+        and all(abs(a - b) <= 0.05 * max(b, 1e-6) for a, b in zip(extent(low), want))
+    )
+    if kept_shape:
         return low, "quads", target, area
 
-    # Quadriflow cancels rather than raising when it dislikes a mesh, and a
-    # cancelled remesh leaves an untouched copy that looks like a result and
-    # then bakes a flat, useless normal map. That is the worst kind of failure,
-    # so it is caught here rather than shipped.
-    holes = nonmanifold_edges(low.data)
+    # Voxels do not care about holes. The same quad size drives the voxel
+    # size, so the one setting he chose still means what it said. The mangled
+    # copy is thrown away first - what Quadriflow left behind is not a
+    # starting point for anything.
+    bpy.data.objects.remove(low, do_unlink=True)
+    low = fresh_copy()
+    alone(low)
 
-    # Voxels do not care about holes. The same quad size drives the voxel size,
-    # so the one setting he chose still means what it said.
     low.data.remesh_voxel_size = max(quad_cm / 100.0, 0.0005)
     low.data.remesh_voxel_adaptivity = 0.0
     try:
@@ -397,12 +468,16 @@ def run(job):
     wipe()
     high = as_one(load(source))
     before = triangles(high)
+    was = extent(high)
 
     low, how, target, area = remesh(high, quad_cm, bool(job.get("symmetry", True)),
                                     bool(job.get("sharp", True)))
     if how == "voxels":
-        notes.append("Quadriflow would not take that mesh, so it was remeshed "
-                     "with voxels instead — even, but not in neat quad rows.")
+        notes.append(
+            "Quadriflow could not make quads out of that mesh — it is not "
+            "watertight, which almost every downloaded model is not. It was "
+            "remeshed with voxels instead: even, and the right shape, but not "
+            "in neat quad rows.")
     after = triangles(low)
 
     coverage = unwrap(low, texture)
@@ -460,6 +535,8 @@ def run(job):
         "normal": map_path,
         "before": before,
         "after": after,
+        "was": was,
+        "now": extent(pieces[0]),
         "target": target,
         "how": how,
         "area": round(area, 3),
