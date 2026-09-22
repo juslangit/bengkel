@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>hantar</title>
+<link rel="stylesheet" href="/common/shell.css">
+<link rel="stylesheet" href="/web/hantar.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "/common/vendor/three.module.js",
+    "three/addons/": "/common/vendor/"
+  }
+}
+</script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><span class="mark"></span><span class="wordmark">hantar</span></div>
+  <div class="subject" id="subject">Into the game, in the shape it wants</div>
+  <div class="topbar-actions">
+    <button class="btn btn-small" id="open">Open a model</button>
+  </div>
+</header>
+
+<main class="bench">
+
+  <section class="stage">
+    <canvas id="stage"></canvas>
+    <div class="stage-label" id="label">nothing open</div>
+    <div class="stage-empty" id="empty">
+      <p>Nothing open.</p>
+      <p class="quiet">Press <b>Open a model</b>, or drop one in this window.
+      Anything periksa has just looked at is one press away.</p>
+    </div>
+  </section>
+
+  <aside class="controls">
+
+    <div class="block">
+      <h2>Which game</h2>
+      <select id="project"></select>
+      <p class="quiet" id="engine-about"></p>
+    </div>
+
+    <div class="block">
+      <h2>Where in it</h2>
+      <select id="place"></select>
+      <p class="quiet" id="place-about"></p>
+    </div>
+
+    <div class="block">
+      <h2>Called what</h2>
+      <input type="text" id="name" placeholder="walker-walk">
+      <p class="landing" id="landing"></p>
+    </div>
+
+    <div class="block">
+      <h2>Fixed on the way in</h2>
+      <label class="line check">
+        <input type="checkbox" id="ground" checked>
+        <span>Stand it on the floor</span>
+      </label>
+      <p class="quiet">Move the origin to the ground, centred — where an engine
+      places, rotates and grounds it from.</p>
+
+      <label class="line">
+        <span>Make it</span>
+        <input type="number" id="height" step="0.1" min="0" placeholder="as it is">
+        <span class="unit">m tall</span>
+      </label>
+      <p class="quiet" id="height-about">Leave it empty to keep the size it is.</p>
+    </div>
+
+    <button class="btn btn-primary btn-big" id="go" disabled>Send it</button>
+
+    <div class="report" id="report" hidden></div>
+
+  </aside>
+</main>
+
+<div class="drop" id="drop" hidden><p>Let go to open it</p></div>
+<div class="toast" id="toast" hidden></div>
+<div class="working" id="working" hidden>
+  <div class="working-inner">
+    <div class="spinner"></div>
+    <p class="what"></p>
+    <p class="why"></p>
+  </div>
+</div>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet-inner">
+    <header>
+      <input type="search" id="find" placeholder="Search your models…">
+      <button class="btn btn-small" id="sheet-close">Close</button>
+    </header>
+    <div class="sheet-list" id="sheet-list"></div>
+  </div>
+</div>
+
+<script>window.BENGKEL_TOKEN = "__BENGKEL_TOKEN__";</script>
+<script type="module" src="/web/app.js"></script>
+</body>
+</html>

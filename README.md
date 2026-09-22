@@ -11,8 +11,8 @@ native/build.sh --install     # build it and put it in /Applications
 native/build.sh --run         # ...and open it
 ```
 
-The rail is the pipeline, in order — **find it, make it, clean it up, dress
-it, check it, move it**:
+The rail is the pipeline, in the order the work happens — **find it, make it,
+clean it up, dress it, check it, move it, ship it**:
 
 | | | |
 |---|---|---|
@@ -22,6 +22,7 @@ it, check it, move it**:
 | **kulit** | *Colour and surface* | One row per part: a colour and what it is made of. Real detail, normal and roughness maps, not a flat slab. |
 | **periksa** | *Check before it ships* | Its size, its origin, its weight, its UVs — read straight out of the file in milliseconds, judged against what it is for. |
 | **gerak** | *Pose and animate* | Click a joint, turn it, key the pose. FK and IK, and a timeline that works out the frames between. |
+| **hantar** | *Into the game* | The last mile: the right folder, the right name, standing on the floor, in the format that engine takes. |
 
 Adding a fifth is an entry in `tools.json`, not a change to any code.
 
@@ -43,8 +44,8 @@ Narrow, on purpose:
 - **Remembers what you are making** — see below.
 
 **Each tool is still a whole program.** `gerak.app` is still in
-`/Applications`, and `pasar`, `boneka`, `jaring`, `kulit`, `periksa` and
-`gerak` all still work in a terminal on their own. Nothing about them changed except that they now
+`/Applications`, and `pasar`, `boneka`, `jaring`, `kulit`, `periksa`, `gerak`
+and `hantar` all still work in a terminal on their own. Nothing about them changed except that they now
 notice when they are next door to each other.
 
 **What they share lives in `common/`** — one server foundation with the token
@@ -67,8 +68,10 @@ reinventing those is how one app comes to look and behave like five.
    floor, does it have UVs, is it within budget for what it is for.
 6. **gerak moves it** — click a joint, turn it, key the pose. Or give a
    skeleton to something that has none.
-7. **Out it goes** — `.glb` for Godot, `.fbx` for Unreal, `.blend` to finish
-   by hand, or a rendered video.
+7. **hantar ships it** — into one of the game projects, under that project's
+   own naming, standing on the floor, in the format that engine takes. It is
+   the only tool here that writes outside the workshop, and it writes nowhere
+   but `~/Desktop/project/game/`.
 
 **boneka → gerak.** A button in boneka's *Take it away* section says **Animate
 it in gerak**. It exports a `.glb` and opens it next door, ready to pose.

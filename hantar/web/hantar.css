@@ -1,0 +1,109 @@
+/* hantar — to deliver.
+ *
+ * Red, because this is the one stage that writes into a project rather than
+ * into the workshop, and that is worth a colour you notice.
+ */
+
+:root { --tool: #e05c5c; }
+
+.bench {
+  position: absolute;
+  inset: var(--topbar-h) 0 0 0;
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+}
+
+.stage { position: relative; background: var(--bg-sunken); min-width: 0; min-height: 0; overflow: hidden; }
+.stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+.stage-label {
+  position: absolute; top: 12px; left: 14px; z-index: 2;
+  pointer-events: none;
+  font: 500 0.86rem ui-monospace, "SF Mono", monospace;
+  color: var(--ink-faint); text-shadow: 0 1px 6px rgba(0,0,0,.75);
+}
+.stage-empty {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; text-align: center; padding: 24px; pointer-events: none; color: var(--ink-dim);
+}
+.stage-empty p { margin: 0; max-width: 38ch; }
+
+.controls {
+  border-left: 1px solid var(--line);
+  background: var(--bg-panel);
+  overflow-y: auto; padding: 18px 18px 26px;
+  display: flex; flex-direction: column; gap: 17px;
+}
+.block { display: flex; flex-direction: column; gap: 8px; }
+.block h2 {
+  margin: 0; font-size: 0.78rem; font-weight: 650;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint);
+}
+.quiet { color: var(--ink-faint); font-size: 0.82rem; margin: 0; line-height: 1.5; }
+
+.line { display: flex; align-items: center; gap: 9px; font-size: 0.9rem; }
+.line.check { cursor: pointer; }
+.line input[type=number] { width: 6.5ch; text-align: right; }
+.line .unit { color: var(--ink-faint); font-size: 0.85rem; }
+
+/* Where it will land, said before anything is written. */
+.landing {
+  margin: 0;
+  font: 500 0.82rem ui-monospace, "SF Mono", monospace;
+  color: var(--ink-dim);
+  background: var(--bg-sunken);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r);
+  padding: 8px 10px;
+  word-break: break-all;
+  line-height: 1.5;
+}
+.landing.is-taken { border-color: #e8b04b; color: #e8c98b; }
+
+.btn-big { padding: 13px; font-size: 1rem; font-weight: 650; justify-content: center; }
+
+.report {
+  background: var(--bg-sunken);
+  border: 1px solid color-mix(in srgb, var(--good) 45%, transparent);
+  border-radius: var(--r-lg);
+  padding: 13px 14px; font-size: 0.86rem; line-height: 1.6;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.report h3 { margin: 0; font-size: 0.95rem; font-weight: 650; color: var(--good); }
+.report ul { margin: 0; padding-left: 18px; }
+.report li { margin: 2px 0; }
+.report .where { color: var(--ink-faint); font-size: 0.78rem; word-break: break-all; }
+
+.drop {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(22,24,29,.86); border: 3px dashed var(--tool); font-size: 1.15rem;
+}
+
+.sheet {
+  position: fixed; inset: 0; z-index: 70; background: rgba(10,11,14,.66);
+  display: flex; align-items: center; justify-content: center; padding: 40px 20px;
+}
+.sheet-inner {
+  background: var(--bg-panel); border: 1px solid var(--line); border-radius: var(--r-lg);
+  width: min(760px, 100%); max-height: 100%; display: flex; flex-direction: column; overflow: hidden;
+}
+.sheet-inner header { display: flex; gap: 10px; padding: 13px 14px; border-bottom: 1px solid var(--line); }
+.sheet-inner header input { flex: 1; }
+.sheet-list { overflow-y: auto; padding: 8px; }
+.pick {
+  display: flex; align-items: baseline; gap: 10px; width: 100%;
+  padding: 9px 11px; border: 1px solid transparent; border-radius: var(--r);
+  background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.pick:hover { background: var(--bg-raised); border-color: var(--line); }
+.pick .n { font-weight: 600; flex: 1; word-break: break-all; }
+.pick .w { color: var(--ink-faint); font-size: 0.78rem; }
+.pick .t { font: 500 0.78rem ui-monospace, "SF Mono", monospace; color: var(--ink-faint); white-space: nowrap; }
+
+@media (max-width: 1000px) {
+  .bench { grid-template-columns: 1fr; grid-template-rows: minmax(240px, 1fr) auto; }
+  .controls { border-left: none; border-top: 1px solid var(--line); }
+}

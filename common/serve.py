@@ -205,8 +205,29 @@ class Tool:
 
     # ── adding routes ─────────────────────────────────────────────────
 
+    # What the foundation answers itself, before a tool's own routes are
+    # reached. A tool registering one of these would be writing a handler that
+    # is never called, and finding that out is an hour of wondering why a page
+    # gets the wrong answer - so it is refused at startup instead.
+    BUILT_IN = {
+        "GET": {"/", "/index.html", "/favicon.ico", "/api/library",
+                "/api/model", "/api/describe", "/api/where"},
+        "POST": {"/api/permit", "/api/save", "/api/reveal"},
+    }
+
+    def _claim(self, method, path):
+        if path in self.BUILT_IN[method]:
+            raise ValueError(
+                "%s already answers %s %s itself, so %s's own handler would "
+                "never be called. Give it another name."
+                % (__name__, method, path, self.name))
+        if path in self._routes[method]:
+            raise ValueError("%s is registered twice in %s" % (path, self.name))
+
     def get(self, path):
         """@tool.get('/api/thing') — the handler is called with the query."""
+        self._claim("GET", path)
+
         def keep(fn):
             self._routes["GET"][path] = fn
             return fn
@@ -214,6 +235,8 @@ class Tool:
 
     def post(self, path):
         """@tool.post('/api/thing') — the handler is called with the body."""
+        self._claim("POST", path)
+
         def keep(fn):
             self._routes["POST"][path] = fn
             return fn

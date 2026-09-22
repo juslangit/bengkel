@@ -4,7 +4,7 @@
     "",
     "The order here is the order of the pipeline, and it is the order they",
     "appear on the rail: find it, make it, clean it up, dress it, check it, move",
-    "it. A tool added in the middle goes in the middle.",
+    "it, ship it. A tool added in the middle goes in the middle.",
     "",
     "Each tool is a local server and a page, started by bengkel and stopped",
     "with it. `ready` is the line the server prints when it is listening; it",
@@ -99,6 +99,20 @@
       "portEnv": "GERAK_PORT",
       "ready": "@@GERAK-READY@@",
       "heavy": false
+    },
+    {
+      "id": "hantar",
+      "name": "hantar",
+      "tagline": "Into the game",
+      "blurb": "The last mile: the right folder, the right name, standing on the floor, in the format that engine takes.",
+      "symbol": "shippingbox",
+      "accent": "#e05c5c",
+      "root": "~/Desktop/project/3d/bengkel/hantar",
+      "server": "server.py",
+      "noOpen": "--no-open",
+      "portEnv": "HANTAR_PORT",
+      "ready": "@@HANTAR-READY@@",
+      "heavy": true
     }
   ]
 }
