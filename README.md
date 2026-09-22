@@ -1,0 +1,153 @@
+# sanggar
+
+**Your workshop. Everything you make, in one window.**
+
+A *sanggar* is a workshop where people make things. This one is the front door
+to your creative tools: one window, one icon in the Dock, and a rail down the
+side to move between them.
+
+```bash
+native/build.sh --install     # build it and put it in /Applications
+native/build.sh --run         # ...and open it
+```
+
+Right now it holds two:
+
+| | |
+|---|---|
+| **boneka** | Type what you want and watch Blender build it, part by part. One button gives it a skeleton. |
+| **gerak** | Click a joint, turn it, key the pose. FK and IK, and a timeline that works out the frames between. |
+
+---
+
+## What it actually does
+
+Narrow, on purpose:
+
+- **Starts each tool's server** the first time you open that tool, and stops
+  the lot when the window closes. Not at launch — boneka keeps a Blender
+  running behind it, and there is no sense holding that open on an 8 GB
+  machine for a tool you have not asked for yet.
+- **Keeps every tool loaded**, so moving between them is instant rather than a
+  reload.
+- **Carries things between them.** A model made in boneka opens in gerak
+  without either of them knowing the other's address, and an animated one goes
+  back the same way.
+- **Remembers what you are making** — see below.
+
+**Each tool is still a whole program.** `gerak.app` is still in
+`/Applications`, and `boneka` and `gerak` still work in a terminal. Nothing
+about them changed except that they now notice when they are next door to each
+other.
+
+## How the two fit together
+
+1. **boneka makes it** — type what you want, watch Blender build it, press
+   once for a skeleton.
+2. **gerak moves it** — click a joint, turn it, key the pose. Or give a
+   skeleton to something that has none.
+3. **Out it goes** — `.glb` for Godot, `.fbx` for Unreal, `.blend` to finish
+   by hand, or a rendered video.
+
+**boneka → gerak.** A button in boneka's *Take it away* section says **Animate
+it in gerak**. It exports a `.glb` and opens it next door, ready to pose.
+
+**gerak → boneka.** The export panel has **Send it back to boneka**, for when
+you want to recolour it, re-texture it, or change a part.
+
+**And gerak can find boneka's work.** gerak's model list now has a row of
+chips saying where each model came from, with **boneka** pinned first — all
+213 of the rigged models boneka has made are one click away instead of buried
+among three thousand.
+
+## What you are making
+
+Sanggar keeps a short list of the pieces you are working on, shown on the
+studio screen. Each one remembers the file as it stands and a note of what
+each tool did to it, so you can pick it up again in either.
+
+A piece is written when you do something **deliberate** — hand a model to the
+other tool, or save a clip. Not when you merely open something: a list of
+everything you have ever looked at is not a list of what you are making.
+
+It lives at `~/Documents/sanggar/pieces.json`, in plain readable JSON. The
+tools keep their own files exactly where they always did; this is a thread
+through them, not a new place to store things. Forgetting a piece on the
+studio screen removes it from the list and touches no files.
+
+## Adding a third tool
+
+`tools.json` is the whole of it. A tool that is a local server and a page
+needs an entry there and nothing else — sanggar draws its card, gives it a
+place on the rail, starts it on demand and includes it in the hand-off:
+
+```json
+{
+  "id": "gudang",
+  "name": "gudang",
+  "tagline": "Check and prepare",
+  "blurb": "...",
+  "symbol": "shippingbox",
+  "accent": "#5bc8a8",
+  "root": "~/Desktop/project/3d/gudang",
+  "server": "server.py",
+  "noOpen": "--no-open",
+  "portEnv": "GUDANG_PORT",
+  "ready": "@@GUDANG-READY@@",
+  "heavy": false
+}
+```
+
+The one thing a tool must do is **print a ready line** when its server is
+listening — one line carrying the port it settled on and that run's token,
+because neither is known until it starts. Both tools here do, and adding it to
+boneka was a two-line change.
+
+## How a tool talks to sanggar
+
+`window.sanggar` is injected into every page sanggar hosts, before anything
+else runs. A tool checks whether it is there and, if it is not, behaves
+exactly as it always did — which is what keeps each of them a whole program
+rather than a component of this one.
+
+```js
+if (window.sanggar) {
+  await window.sanggar.handOver('gerak', path, 'knight with a sword');
+  await window.sanggar.note({ path, name, what: 'saved the clip "walk"' });
+  window.sanggar.onReceive(({ path, note }) => open(path));
+}
+```
+
+Nothing crosses between the two servers. The native side owns the bridge, so
+neither tool needs the other's port, token or origin — which is also why
+neither can be reached from the other by accident.
+
+## Where things are
+
+```
+tools.json              which tools sanggar holds
+web/                    the studio screen
+native/Sources/         one Swift file
+native/build.sh         assembles the .app; no Xcode project
+tests/run.sh            the tests
+```
+
+The bundle carries the studio page and the tool list and **no copy of any
+tool** — it runs them where they live on disk, so a change to boneka or gerak
+is live the next time sanggar starts, with nothing to rebuild.
+
+The log is at `~/Library/Logs/sanggar.log`, and the app's own menu has a
+**Show the log** item.
+
+## Running the tests
+
+```bash
+tests/run.sh
+```
+
+There is nothing here about joints or keyframes — boneka and gerak have their
+own suites. This checks only what sanggar adds, which is exactly what breaks
+when two programs are made to live in one window: that it reads its tool list,
+that a tool starts when asked and on a port it chose, that nothing is left
+running afterwards, that a file handed from one tool arrives in the other, and
+that a piece of work is remembered.

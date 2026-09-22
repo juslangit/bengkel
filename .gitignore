@@ -1,0 +1,6 @@
+# What the build makes, not what sanggar is.
+native/build/
+__pycache__/
+*.pyc
+.DS_Store
+.env

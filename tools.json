@@ -1,0 +1,46 @@
+{
+  "_comment": [
+    "The tools sanggar hosts. Adding a fourth is an entry here, not a code",
+    "change — which is the point of keeping it as data.",
+    "",
+    "Each tool is a local server and a page, started by sanggar and stopped",
+    "with it. `ready` is the line the server prints when it is listening; it",
+    "carries the port it settled on and that run's token, because neither is",
+    "known until it starts.",
+    "",
+    "`noOpen` is the flag that stops the tool opening a browser of its own —",
+    "they disagree about the spelling, which is exactly the sort of thing a",
+    "config file should absorb rather than a program remember."
+  ],
+
+  "tools": [
+    {
+      "id": "boneka",
+      "name": "boneka",
+      "tagline": "Make and rig",
+      "blurb": "Type what you want and watch Blender build it, part by part. One button gives it a skeleton.",
+      "symbol": "wand.and.stars",
+      "accent": "#b98cf0",
+      "root": "~/Desktop/project/ai/boneka",
+      "server": "server.py",
+      "noOpen": "--no-browser",
+      "portEnv": "BONEKA_PORT",
+      "ready": "@@BONEKA-READY@@",
+      "heavy": true
+    },
+    {
+      "id": "gerak",
+      "name": "gerak",
+      "tagline": "Pose and animate",
+      "blurb": "Click a joint, turn it, key the pose. FK and IK, and a timeline that works out the frames between.",
+      "symbol": "figure.walk",
+      "accent": "#f5a524",
+      "root": "~/Desktop/project/3d/gerak",
+      "server": "server.py",
+      "noOpen": "--no-open",
+      "portEnv": "GERAK_PORT",
+      "ready": "@@GERAK-READY@@",
+      "heavy": false
+    }
+  ]
+}

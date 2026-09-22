@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>html,body{margin:0;background:transparent}svg{display:block;width:1024px;height:1024px}</style>
+</head><body>
+<!--
+  sanggar's icon: two joints on one bone, in the two tools' colours — boneka's
+  violet and gerak's amber — sitting on the same plate. A workshop where two
+  crafts meet, which is the whole idea.
+-->
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="plate" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#2b3140"/>
+      <stop offset="0.55" stop-color="#1b1f28"/>
+      <stop offset="1" stop-color="#11141a"/>
+    </linearGradient>
+    <linearGradient id="bone" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#c79df5"/>
+      <stop offset="1" stop-color="#f0a52a"/>
+    </linearGradient>
+    <linearGradient id="violet" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#d6b6ff"/><stop offset="1" stop-color="#9a68e0"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#ffc766"/><stop offset="1" stop-color="#ef9410"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="24" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="lift" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <rect x="86" y="86" width="852" height="852" rx="196" ry="196" fill="url(#plate)"/>
+  <rect x="86" y="86" width="852" height="852" rx="196" ry="196"
+        fill="none" stroke="#3d4453" stroke-width="3" opacity="0.7"/>
+
+  <!-- the bench the work sits on -->
+  <g opacity="0.15" stroke="#8d97ab" stroke-width="3">
+    <path d="M168 742 L856 742"/>
+    <path d="M214 812 L810 812"/>
+  </g>
+
+  <g filter="url(#lift)">
+    <path d="M356 386 L668 596" stroke="url(#bone)" stroke-width="50"
+          stroke-linecap="round" fill="none"/>
+  </g>
+
+  <g filter="url(#glow)">
+    <circle cx="356" cy="386" r="96" fill="url(#violet)"/>
+    <circle cx="668" cy="596" r="80" fill="url(#amber)"/>
+  </g>
+
+  <circle cx="328" cy="356" r="30" fill="#fff" opacity="0.34"/>
+  <circle cx="644" cy="570" r="24" fill="#fff" opacity="0.28"/>
+</svg>
+</body></html>

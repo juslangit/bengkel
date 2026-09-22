@@ -1,0 +1,299 @@
+/* sanggar's studio screen.
+ *
+ * Quieter than the tools it holds. This page is a doorway: you should be
+ * through it and into boneka or gerak within a second or two, so it earns no
+ * decoration of its own beyond telling you what is here and what is running.
+ */
+
+:root {
+  --bg:        #14161b;
+  --panel:     #1c1f27;
+  --raised:    #232733;
+  --line:      #2f3542;
+  --ink:       #e8eaf0;
+  --ink-dim:   #98a1b3;
+  --ink-faint: #69718a;
+  --key:       #f5a524;
+  font-size: 16px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Room for the window's traffic lights, which sit over this page. */
+.head { padding: 52px 56px 26px; }
+
+.brand { display: flex; align-items: center; gap: 18px; }
+
+.mark {
+  width: 46px; height: 46px;
+  flex: none;
+  border-radius: 13px;
+  background: linear-gradient(150deg, #2b3140, #191c23);
+  border: 1px solid var(--line);
+  position: relative;
+}
+.mark::before,
+.mark::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+}
+.mark::before {
+  width: 13px; height: 13px;
+  left: 9px; top: 9px;
+  background: #b98cf0;
+  box-shadow: 0 0 0 4px rgba(185, 140, 240, 0.16);
+}
+.mark::after {
+  width: 11px; height: 11px;
+  right: 10px; bottom: 10px;
+  background: var(--key);
+  box-shadow: 0 0 0 4px rgba(245, 165, 36, 0.16);
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.55rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+.head p {
+  margin: 4px 0 0;
+  color: var(--ink-faint);
+  font-size: 0.97rem;
+}
+
+main { padding: 0 56px 56px; max-width: 1100px; }
+
+/* ── the tools ────────────────────────────────────────────────────── */
+
+.tools {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  gap: 16px;
+}
+
+.waiting { color: var(--ink-faint); font-size: 0.95rem; }
+
+.tool {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 22px 22px 20px;
+  cursor: pointer;
+  transition: border-color .14s, background .14s, transform .14s;
+}
+.tool:hover { background: var(--raised); transform: translateY(-2px); }
+.tool:active { transform: translateY(0); }
+
+.tool-top { display: flex; align-items: center; gap: 11px; margin-bottom: 10px; }
+
+.tool-dot {
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  flex: none;
+  background: currentColor;
+}
+
+.tool h3 {
+  margin: 0;
+  font-size: 1.16rem;
+  font-weight: 650;
+  flex: 1;
+}
+
+.tool .state {
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 3px 10px;
+}
+.tool .state.is-live { color: #6ddca0; border-color: #2c5a41; }
+
+.tool .tagline {
+  margin: 0 0 8px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tool p.blurb {
+  margin: 0;
+  color: var(--ink-dim);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+/* ── how they fit together ────────────────────────────────────────── */
+
+.how {
+  margin-top: 40px;
+  padding-top: 30px;
+  border-top: 1px solid var(--line);
+}
+
+.how h2 {
+  margin: 0 0 18px;
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.flow {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 760px;
+}
+/* Two children only — the number and one span holding the sentence. Letting
+ * the inline text and the <code> chips become flex items of their own spreads
+ * them out across the row with gaps between every word. */
+.flow li {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  color: var(--ink-dim);
+  font-size: 0.97rem;
+  line-height: 1.65;
+}
+.flow strong { color: var(--ink); font-weight: 600; }
+.flow code {
+  font: 500 0.88em ui-monospace, "SF Mono", monospace;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 1px 6px;
+  color: var(--ink-dim);
+}
+
+.step {
+  flex: none;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  color: var(--ink-faint);
+  font-size: 0.78rem;
+  font-weight: 650;
+  display: grid;
+  place-items: center;
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+.aside {
+  margin: 22px 0 0;
+  max-width: 760px;
+  color: var(--ink-faint);
+  font-size: 0.92rem;
+  line-height: 1.7;
+}
+
+::-webkit-scrollbar { width: 11px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: #333a48;
+  border: 3px solid var(--bg);
+  border-radius: 6px;
+}
+
+/* ── what you are making ──────────────────────────────────────────── */
+
+.work { margin-top: 38px; }
+
+.work h2 {
+  margin: 0 0 16px;
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.pieces { display: flex; flex-direction: column; gap: 9px; }
+
+.piece {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 13px 15px;
+}
+.piece.is-gone { opacity: 0.5; }
+
+.piece-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+.piece-what {
+  margin: 3px 0 0;
+  font-size: 0.83rem;
+  color: var(--ink-faint);
+}
+.piece-main { flex: 1; min-width: 0; }
+
+.piece-tools { display: flex; gap: 5px; }
+.piece-tools span {
+  font-size: 0.7rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 20px;
+  padding: 2px 8px;
+  border: 1px solid currentColor;
+  opacity: 0.85;
+}
+
+.piece-go {
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 550;
+  color: var(--ink);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.piece-go:hover { background: #2b303c; }
+.piece-go:disabled { opacity: 0.4; cursor: default; }
+
+.piece-drop {
+  font: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--ink-faint);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+.piece-drop:hover { color: #ef6461; }
