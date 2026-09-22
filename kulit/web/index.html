@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>kulit</title>
+<link rel="stylesheet" href="/common/shell.css">
+<link rel="stylesheet" href="/web/kulit.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "/common/vendor/three.module.js",
+    "three/addons/": "/common/vendor/"
+  }
+}
+</script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><span class="mark"></span><span class="wordmark">kulit</span></div>
+  <div class="subject" id="subject">Give a model its colour and its surface</div>
+  <div class="topbar-actions">
+    <button class="btn btn-small" id="open">Open a model</button>
+    <button class="btn btn-small" id="tab-mine">What I have dressed</button>
+    <button class="btn btn-small" id="send" hidden>Send it on</button>
+  </div>
+</header>
+
+<main class="bench">
+
+  <section class="stage">
+    <canvas id="stage"></canvas>
+    <div class="stage-label" id="label">nothing open</div>
+    <div class="stage-empty" id="empty">
+      <p>Nothing open.</p>
+      <p class="quiet">Press <b>Open a model</b>, or drop one in this window.
+      Anything jaring has cleaned up is one press away.</p>
+    </div>
+  </section>
+
+  <aside class="controls">
+
+    <div class="block">
+      <h2>The parts</h2>
+      <div class="parts" id="parts">
+        <p class="quiet">Open a model and every part of it appears here, one
+        row each.</p>
+      </div>
+    </div>
+
+    <div class="block" id="palette-block" hidden>
+      <h2>Colours</h2>
+      <select id="palette"></select>
+      <div class="swatches" id="swatches"></div>
+      <p class="quiet">Click a part above, then a colour here.</p>
+    </div>
+
+    <button class="btn btn-primary btn-big" id="go" disabled>Dress it</button>
+
+    <div class="report" id="report" hidden></div>
+
+  </aside>
+</main>
+
+<div class="drop" id="drop" hidden><p>Let go to open it</p></div>
+<div class="toast" id="toast" hidden></div>
+<div class="working" id="working" hidden>
+  <div class="working-inner">
+    <div class="spinner"></div>
+    <p class="what"></p>
+    <p class="why"></p>
+  </div>
+</div>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet-inner">
+    <header>
+      <input type="search" id="find" placeholder="Search your models…">
+      <button class="btn btn-small" id="sheet-close">Close</button>
+    </header>
+    <div class="sheet-list" id="sheet-list"></div>
+  </div>
+</div>
+
+<script>window.BENGKEL_TOKEN = "__BENGKEL_TOKEN__";</script>
+<script type="module" src="/web/app.js"></script>
+</body>
+</html>

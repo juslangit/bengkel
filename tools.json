@@ -3,8 +3,8 @@
     "The tools bengkel hosts. Adding a fourth is an entry here, not a code",
     "",
     "The order here is the order of the pipeline, and it is the order they",
-    "appear on the rail: find it, make it, clean it up, move it. A tool added",
-    "in the middle goes in the middle.",
+    "appear on the rail: find it, make it, clean it up, dress it, move it. A tool",
+    "added in the middle goes in the middle.",
     "",
     "Each tool is a local server and a page, started by bengkel and stopped",
     "with it. `ready` is the line the server prints when it is listening; it",
@@ -56,6 +56,20 @@
       "noOpen": "--no-open",
       "portEnv": "JARING_PORT",
       "ready": "@@JARING-READY@@",
+      "heavy": true
+    },
+    {
+      "id": "kulit",
+      "name": "kulit",
+      "tagline": "Colour and surface",
+      "blurb": "Give every part of a model a colour and say what it is made of. Real maps, not a flat slab.",
+      "symbol": "paintpalette",
+      "accent": "#e07a5f",
+      "root": "~/Desktop/project/3d/bengkel/kulit",
+      "server": "server.py",
+      "noOpen": "--no-open",
+      "portEnv": "KULIT_PORT",
+      "ready": "@@KULIT-READY@@",
       "heavy": true
     },
     {
