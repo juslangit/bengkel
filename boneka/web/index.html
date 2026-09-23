@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>boneka</title>
+<link rel="stylesheet" href="/web/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>&#129337;</text></svg>">
+<script type="importmap">
+{ "imports": { "three": "/web/vendor/three.module.js" } }
+</script>
+</head>
+<body>
+
+<div id="app">
+
+  <aside id="panel">
+    <header>
+      <h1>boneka</h1>
+      <p class="tag">prompt &rarr; model &rarr; bones &rarr; motion</p>
+      <p id="status" class="status waiting">starting Blender&hellip;</p>
+    </header>
+
+    <section class="stage" id="stage-make">
+      <h2><span class="num">1</span> Make it</h2>
+      <textarea id="prompt" rows="2" placeholder="a tall blue knight with a sword and a cape"></textarea>
+      <div class="chips" id="examples"></div>
+
+      <div class="palette-row">
+        <label for="palette">palette <span class="soft">optional</span></label>
+        <div class="row">
+          <input id="palette" type="text"
+                 placeholder="none — or pastel, sweetie-16, endesga-32">
+          <button id="palette-clear" class="ghost small">clear</button>
+        </div>
+        <div class="chips" id="moods"></div>
+        <div class="swatches" id="swatches" hidden></div>
+        <p class="hint" id="palette-note">Everything on the model is built from
+          one palette, shades included.</p>
+      </div>
+
+      <button id="build" class="primary big" disabled>Build</button>
+      <div class="progress" id="progress" hidden>
+        <div class="bar"><span id="bar-fill"></span></div>
+        <p id="progress-label">&nbsp;</p>
+      </div>
+      <details id="local3d-box">
+        <summary>Generate from a photo, on the PC</summary>
+        <p class="hint">Tencent's Hunyuan3D-2 running on the RTX&nbsp;3060 at the
+           academy, over Tailscale. Free, unlimited, and it comes back rigged
+           through the same path as anything else.</p>
+        <input id="local3d-file" type="file" accept="image/*">
+        <label class="tick"><input id="local3d-texture" type="checkbox">
+          also paint a texture <span class="soft">(slower, needs 12&nbsp;GB)</span></label>
+        <button id="local3d" class="ghost" disabled>Generate on the PC</button>
+        <p class="hint" id="local3d-state">checking whether the PC is awake&hellip;</p>
+      </details>
+
+      <details id="meshy-box">
+        <summary>Use Meshy instead (costs credits)</summary>
+        <p class="warn">Meshy charges real credits per model. boneka never calls
+           it on its own &mdash; you press this, and it asks first.</p>
+        <button id="meshy" class="ghost">Generate with Meshy&hellip;</button>
+        <p class="hint" id="meshy-state"></p>
+      </details>
+    </section>
+
+    <section class="stage" id="stage-rig">
+      <h2><span class="num">2</span> Give it bones</h2>
+      <button id="rig" class="primary big" disabled>Auto-Rig</button>
+      <p class="hint" id="rig-hint">Build something first.</p>
+    </section>
+
+    <section class="stage" id="stage-anim">
+      <h2><span class="num">3</span> Make it move</h2>
+      <input id="anim-prompt" type="text" placeholder="walk slowly" disabled>
+      <div class="chips" id="moves"></div>
+      <button id="animate" class="primary big" disabled>Animate</button>
+      <div id="clips-row" hidden>
+        <label for="clips">or borrow a motion capture clip</label>
+        <div class="row">
+          <select id="clips"></select>
+          <button id="use-clip" class="ghost">Apply</button>
+        </div>
+      </div>
+      <p class="hint" id="anim-hint">Rig it first.</p>
+    </section>
+
+    <section class="stage">
+      <h2><span class="num">4</span> Take it away</h2>
+      <div class="row">
+        <button class="ghost export" data-format="glb" disabled>.glb</button>
+        <button class="ghost export" data-format="fbx" disabled>.fbx</button>
+        <button class="ghost export" data-format="blend" disabled>.blend</button>
+      </div>
+      <div class="row" id="handover-row" hidden>
+        <button id="to-gerak" class="primary" disabled>Animate it in gerak</button>
+      </div>
+      <p class="hint" id="export-hint">Godot and Unreal both read .glb and .fbx.</p>
+    </section>
+
+    <footer>
+      <button id="log-toggle" class="link">what Blender is doing</button>
+      <pre id="log"></pre>
+    </footer>
+  </aside>
+
+  <main id="stage">
+    <canvas id="view"></canvas>
+
+    <aside id="reference" hidden>
+      <div class="ref-head">
+        <span>reference &mdash; <b id="ref-subject"></b></span>
+        <button id="ref-toggle" class="ghost small">hide</button>
+      </div>
+      <div class="ref-strip" id="ref-strip"></div>
+      <p class="ref-note" id="ref-note"></p>
+    </aside>
+
+    <div id="hud">
+      <div class="readout">
+        <span><b id="r-name">nothing yet</b></span>
+        <span id="r-parts">&mdash;</span>
+        <span id="r-tris">&mdash;</span>
+        <span id="r-height">&mdash;</span>
+        <span id="r-bones">&mdash;</span>
+      </div>
+    </div>
+
+    <div id="playbar" hidden>
+      <button id="play" class="round" title="play / pause">&#10074;&#10074;</button>
+      <input id="scrub" type="range" min="0" max="1000" value="0">
+      <span id="time">0.00s</span>
+      <label class="speed">speed
+        <input id="speed" type="range" min="10" max="250" value="100">
+      </label>
+      <button id="toggle-bones" class="ghost small">bones</button>
+      <button id="toggle-grid" class="ghost small">grid</button>
+    </div>
+
+    <div id="toast" hidden></div>
+  </main>
+
+</div>
+
+<script type="module" src="/web/app.js"></script>
+</body>
+</html>

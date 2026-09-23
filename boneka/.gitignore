@@ -1,0 +1,9 @@
+sessions/
+animations/*.fbx
+.env
+__pycache__/
+*.pyc
+.DS_Store
+palettes/
+textures/
+hdri/
