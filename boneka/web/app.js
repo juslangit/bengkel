@@ -805,3 +805,70 @@ if (window.bengkel) {
     logLine('received from gerak: ' + payload.path);
   });
 }
+
+
+/* ── what the assistant may do here ──────────────────────────────────
+ *
+ * bengkel injects a floating assistant into every tool it hosts. It cannot
+ * write code or touch anything on its own: it may only call the actions
+ * listed here, which are things this tool already does. `snapshot` and
+ * `restore` are what make them undoable, and `risky: true` marks the ones
+ * that reach outside the tool, which bengkel always asks about first.
+ *
+ * None of this happens when the tool is run on its own.
+ */
+if (window.bengkel && window.bengkel.assist) window.bengkel.assist({
+  tool: 'boneka',
+  about: 'makes a character from a written description, in Blender, on this '
+       + 'Mac. Building takes a while and shows its progress as it goes.',
+  context: () => ({
+    prompt: $('prompt') ? $('prompt').value : '',
+    animation_prompt: $('anim-prompt') ? $('anim-prompt').value : '',
+    busy: $('build') ? $('build').disabled : null,
+    last_line: $('log') ? ($('log').lastElementChild || {}).textContent || '' : '',
+  }),
+  snapshot: () => ({
+    prompt: $('prompt') ? $('prompt').value : '',
+    anim: $('anim-prompt') ? $('anim-prompt').value : '',
+  }),
+  restore: (shot) => {
+    if ($('prompt')) $('prompt').value = shot.prompt;
+    if ($('anim-prompt')) $('anim-prompt').value = shot.anim;
+  },
+  actions: {
+    describe: {
+      what: 'Write the description of the character to be built, without '
+          + 'building it yet',
+      args: { prompt: 'what the character should be' },
+      run: async ({ prompt }) => {
+        if (!$('prompt')) throw new Error('no description box on this page');
+        $('prompt').value = prompt || '';
+        return prompt;
+      },
+    },
+    build: {
+      what: 'Build the character that is described. Takes a while and writes files',
+      args: {},
+      risky: true,
+      warn: 'This runs Blender and builds a whole character, which takes a '
+          + 'few minutes and writes files to disk.',
+      run: async () => {
+        if (!$('build') || $('build').disabled) throw new Error('it is busy already');
+        $('build').click();
+        return 'started — watch the log';
+      },
+    },
+    animate: {
+      what: 'Give the character an animation, described in words',
+      args: { prompt: 'the movement, e.g. "a slow walk"' },
+      risky: true,
+      warn: 'This builds an animation onto the character and writes files.',
+      run: async ({ prompt }) => {
+        if ($('anim-prompt')) $('anim-prompt').value = prompt || '';
+        if (!$('animate')) throw new Error('no animate button on this page');
+        $('animate').click();
+        return 'started';
+      },
+    },
+  },
+});

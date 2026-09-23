@@ -204,3 +204,59 @@ window.pasar = { search, showMine, api, get state() { return { sources, showing 
 
 paintTabs();
 loadSources();
+
+
+/* ── what the assistant may do here ──────────────────────────────────
+ *
+ * bengkel injects a floating assistant into every tool it hosts. It cannot
+ * write code or touch anything on its own: it may only call the actions
+ * listed here, which are the things this tool already does. That is what
+ * makes them undoable — `snapshot` photographs everything an action could
+ * change, and `restore` puts it back.
+ *
+ * `risky: true` means it reaches outside the tool, and bengkel always asks
+ * before running one however sure the assistant is.
+ *
+ * None of this happens when the tool is run on its own.
+ */
+if (window.bengkel && window.bengkel.assist) window.bengkel.assist({
+  tool: 'pasar',
+  about: 'searches Sketchfab, Poly Haven and Texturelabs from one box, with '
+       + 'the licence shown on every result before anything is downloaded.',
+  context: () => ({
+    showing: window.pasar.state.showing,
+    query: $('#q') ? $('#q').value : '',
+    subject: $('#subject') ? $('#subject').value : '',
+    sources: window.pasar.state.sources.length,
+    results: document.querySelectorAll('#results .card').length,
+  }),
+  snapshot: () => ({
+    q: $('#q') ? $('#q').value : '',
+    subject: $('#subject') ? $('#subject').value : '',
+    showing: window.pasar.state.showing,
+  }),
+  restore: (shot) => {
+    if ($('#q')) $('#q').value = shot.q;
+    if ($('#subject')) $('#subject').value = shot.subject;
+    if (shot.showing === 'mine') window.pasar.showMine(); else window.pasar.search();
+  },
+  actions: {
+    search: {
+      what: 'Search every source for something, and show the results',
+      args: { query: 'what to look for, e.g. "oak barrel"',
+              subject: 'optional: which kind of thing — a value from the subject box' },
+      run: async ({ query, subject }) => {
+        if ($('#q')) $('#q').value = query || '';
+        if (subject && $('#subject')) $('#subject').value = subject;
+        await window.pasar.search();
+        const n = document.querySelectorAll('#results .card').length;
+        return `${n} result${n === 1 ? '' : 's'}`;
+      },
+    },
+    showWhatIHave: {
+      what: 'Show what has already been downloaded into the workshop',
+      args: {},
+      run: async () => { await window.pasar.showMine(); return null; },
+    },
+  },
+});

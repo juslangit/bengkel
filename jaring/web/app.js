@@ -302,3 +302,92 @@ if (inside) $('#subject').textContent = 'Make a heavy model light enough to use'
 
 // Exposed for the tests, which drive this the way a person would.
 window.jaring = { open, remesh, estimate, state: () => ({ model, result }) };
+
+
+/* ── what the assistant may do here ──────────────────────────────────
+ *
+ * bengkel injects a floating assistant into every tool it hosts. It cannot
+ * write code or touch anything on its own: it may only call the actions
+ * listed here, which are the things this tool already does. That is what
+ * makes them undoable — `snapshot` photographs everything an action could
+ * change, and `restore` puts it back.
+ *
+ * `risky: true` means it reaches outside the tool, and bengkel always asks
+ * before running one however sure the assistant is.
+ *
+ * None of this happens when the tool is run on its own.
+ */
+if (window.bengkel && window.bengkel.assist) window.bengkel.assist({
+  tool: 'jaring',
+  about: 'remeshes a model: one slider asking how wide a quad should be in '
+       + 'centimetres, then weld, Quadriflow, UVs, a baked normal map and LODs.',
+  context: () => {
+    const s = window.jaring.state();
+    return {
+      model: s.model && { name: s.model.name, triangles: s.model.triangles },
+      quad_cm: $('#quad') ? +$('#quad').value : null,
+      symmetry: $('#symmetry') ? $('#symmetry').checked : null,
+      sharp: $('#sharp') ? $('#sharp').checked : null,
+      lods: $('#lods') ? $('#lods').checked : null,
+      texture: $('#texture') ? $('#texture').checked : null,
+      estimated: $('#count-after') ? $('#count-after').textContent : null,
+      done: !!s.result,
+    };
+  },
+  snapshot: () => ({
+    quad: $('#quad') ? $('#quad').value : null,
+    symmetry: $('#symmetry') ? $('#symmetry').checked : null,
+    sharp: $('#sharp') ? $('#sharp').checked : null,
+    lods: $('#lods') ? $('#lods').checked : null,
+    texture: $('#texture') ? $('#texture').checked : null,
+  }),
+  restore: (shot) => {
+    for (const [id, value] of Object.entries(shot)) {
+      const el = $(`#${id}`);
+      if (!el || value === null) continue;
+      if (el.type === 'checkbox') el.checked = value;
+      else { el.value = value; el.dispatchEvent(new Event('input')); }
+    }
+  },
+  actions: {
+    setQuadSize: {
+      what: 'Set how wide one quad should be, in centimetres. Bigger means a '
+          + 'lighter model with less detail',
+      args: { cm: 'a number, the width of a quad in centimetres' },
+      run: async ({ cm }) => {
+        const el = $('#quad');
+        if (!el) throw new Error('no quad slider on this page');
+        el.value = String(cm);
+        el.dispatchEvent(new Event('input'));
+        return `${el.value} cm`;
+      },
+    },
+    setOption: {
+      what: 'Turn one of the remesh options on or off',
+      args: { option: 'one of: symmetry, sharp, lods, texture', on: 'true or false' },
+      run: async ({ option, on }) => {
+        const el = $(`#${option}`);
+        if (!el || el.type !== 'checkbox') throw new Error(`no option called ${option}`);
+        el.checked = on === true || on === 'true';
+        el.dispatchEvent(new Event('change'));
+        return `${option} ${el.checked ? 'on' : 'off'}`;
+      },
+    },
+    estimate: {
+      what: 'Work out what the model would come out at, without remeshing it',
+      args: {},
+      run: async () => {
+        await window.jaring.estimate();
+        return $('#count-after') ? $('#count-after').textContent : null;
+      },
+    },
+    remesh: {
+      what: 'Actually remesh the model. Writes new files through Blender',
+      args: {},
+      risky: true,
+      warn: 'This runs Blender and writes a new model to disk. It takes a few '
+          + 'seconds and cannot be undone from here.',
+      run: async () => { await window.jaring.remesh(); return 'done'; },
+    },
+  },
+});

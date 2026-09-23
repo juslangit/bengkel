@@ -281,3 +281,50 @@ window.kulit = {
   open, dress, choose,
   state: () => ({ model, parts, chosen, result, surfaces: surfaces.length }),
 };
+
+
+/* ── what the assistant may do here ──────────────────────────────────
+ *
+ * bengkel injects a floating assistant into every tool it hosts. It cannot
+ * write code or touch anything on its own: it may only call the actions
+ * listed here, which are the things this tool already does. That is what
+ * makes them undoable — `snapshot` photographs everything an action could
+ * change, and `restore` puts it back.
+ *
+ * `risky: true` means it reaches outside the tool, and bengkel always asks
+ * before running one however sure the assistant is.
+ *
+ * None of this happens when the tool is run on its own.
+ */
+if (window.bengkel && window.bengkel.assist) window.bengkel.assist({
+  tool: 'kulit',
+  about: 'gives a model a colour and a material per part, with detail, normal '
+       + 'and roughness maps derived from one photograph.',
+  context: () => {
+    const s = window.kulit.state();
+    return {
+      model: s.model && s.model.name,
+      parts: (s.parts || []).map((p) => ({ name: p.name, colour: p.colour,
+                                           surface: p.surface })),
+      chosen: s.chosen,
+      surfaces_available: s.surfaces,
+      done: !!s.result,
+    };
+  },
+  snapshot: () => ({ chosen: window.kulit.state().chosen }),
+  restore: (shot) => { if (shot.chosen) window.kulit.choose(shot.chosen); },
+  actions: {
+    choosePart: {
+      what: 'Pick which part of the model to work on',
+      args: { part: 'the name of the part, as listed in parts' },
+      run: async ({ part }) => { window.kulit.choose(part); return part; },
+    },
+    dress: {
+      what: 'Apply the colours and materials to the model. Writes files',
+      args: {},
+      risky: true,
+      warn: 'This bakes the textures and writes a new model to disk.',
+      run: async () => { await window.kulit.dress(); return 'done'; },
+    },
+  },
+});

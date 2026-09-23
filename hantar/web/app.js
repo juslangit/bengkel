@@ -251,3 +251,82 @@ window.hantar = {
                   project: $('#project').value, place: place(),
                   landing: $('#landing').textContent }),
 };
+
+
+/* ── what the assistant may do here ──────────────────────────────────
+ *
+ * bengkel injects a floating assistant into every tool it hosts. It cannot
+ * write code or touch anything on its own: it may only call the actions
+ * listed here, which are the things this tool already does. That is what
+ * makes them undoable — `snapshot` photographs everything an action could
+ * change, and `restore` puts it back.
+ *
+ * `risky: true` means it reaches outside the tool, and bengkel always asks
+ * before running one however sure the assistant is.
+ *
+ * None of this happens when the tool is run on its own.
+ */
+if (window.bengkel && window.bengkel.assist) window.bengkel.assist({
+  tool: 'hantar',
+  about: 'puts a finished model into one of the game projects, under that '
+       + 'project\'s own naming, standing on the floor, in the right format.',
+  context: () => {
+    const s = window.hantar.state();
+    return {
+      model: s.model && s.model.name,
+      project: s.project,
+      projects_available: s.projects,
+      name: $('#name') ? $('#name').value : '',
+      landing: s.landing,
+      sent: !!s.result,
+    };
+  },
+  snapshot: () => ({
+    project: $('#project') ? $('#project').value : '',
+    name: $('#name') ? $('#name').value : '',
+    height: $('#height') ? $('#height').value : null,
+    ground: $('#ground') ? $('#ground').checked : null,
+  }),
+  restore: (shot) => {
+    if ($('#project') && shot.project) window.hantar.setProject(shot.project);
+    if ($('#name')) window.hantar.setName(shot.name);
+    if ($('#height') && shot.height !== null) {
+      $('#height').value = shot.height;
+      $('#height').dispatchEvent(new Event('input'));
+    }
+    if ($('#ground') && shot.ground !== null) {
+      $('#ground').checked = shot.ground;
+      $('#ground').dispatchEvent(new Event('change'));
+    }
+  },
+  actions: {
+    chooseProject: {
+      what: 'Pick which game project the model is going to',
+      args: { project: 'the id of a project from projects_available' },
+      run: async ({ project }) => { window.hantar.setProject(project); return project; },
+    },
+    setName: {
+      what: 'Set the name the model will have inside the game',
+      args: { name: 'the file name, without an extension' },
+      run: async ({ name }) => { window.hantar.setName(name); return name; },
+    },
+    setHeight: {
+      what: 'Set how tall the model should be in the game, in metres',
+      args: { metres: 'a number' },
+      run: async ({ metres }) => {
+        const el = $('#height');
+        if (!el) throw new Error('no height box on this page');
+        el.value = String(metres);
+        el.dispatchEvent(new Event('input'));
+        return `${el.value} m`;
+      },
+    },
+    ship: {
+      what: 'Copy the model into the chosen game project',
+      args: {},
+      risky: true,
+      warn: 'This writes the model into a game project\'s own folder.',
+      run: async () => { await window.hantar.send(); return 'sent'; },
+    },
+  },
+});

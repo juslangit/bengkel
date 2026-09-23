@@ -197,3 +197,48 @@ window.periksa = {
   look, setRole: (r) => { role = r; },
   state: () => ({ model, role, report, roles: roles.length }),
 };
+
+
+/* ── what the assistant may do here ──────────────────────────────────
+ *
+ * bengkel injects a floating assistant into every tool it hosts. It cannot
+ * write code or touch anything on its own: it may only call the actions
+ * listed here, which are the things this tool already does. That is what
+ * makes them undoable — `snapshot` photographs everything an action could
+ * change, and `restore` puts it back.
+ *
+ * `risky: true` means it reaches outside the tool, and bengkel always asks
+ * before running one however sure the assistant is.
+ *
+ * None of this happens when the tool is run on its own.
+ */
+if (window.bengkel && window.bengkel.assist) window.bengkel.assist({
+  tool: 'periksa',
+  about: 'reads a model\'s size, origin, weight and UVs straight out of the '
+       + '.glb and judges them against what the model is for.',
+  context: () => {
+    const s = window.periksa.state();
+    return {
+      model: s.model && s.model.name,
+      role: s.role,
+      roles_available: s.roles,
+      findings: s.report && (s.report.findings || []).map((f) => f.what || f),
+    };
+  },
+  snapshot: () => ({ role: window.periksa.state().role }),
+  restore: (shot) => {
+    window.periksa.setRole(shot.role);
+    if ($('#role')) $('#role').value = shot.role;
+  },
+  actions: {
+    setRole: {
+      what: 'Say what the model is for, which is what it is judged against',
+      args: { role: 'one of the roles listed in roles_available' },
+      run: async ({ role }) => {
+        window.periksa.setRole(role);
+        if ($('#role')) { $('#role').value = role; $('#role').dispatchEvent(new Event('change')); }
+        return role;
+      },
+    },
+  },
+});

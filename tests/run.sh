@@ -201,5 +201,119 @@ else
 fi
 
 echo
+echo "── the assistant, in every tool ────────────────────────────────"
+
+# What is tested here is the machinery, not the model: that every tool really
+# hands over an action list, that an action runs and undoes, and that the
+# risky ones are marked. Asking claude itself is behind BENGKEL_ASK=1, because
+# it takes the best part of a minute and spends his plan's usage.
+for tool in $TOOLS; do
+  run_app 26 --open "$tool" --js "
+    return (async () => {
+      const wait = (ms) => new Promise(r => setTimeout(r, ms));
+      const a = () => window.bengkel.assistant;
+      for (let i = 0; i < 220 && !(a() && a().kit); i++) await wait(100);
+      const kit = a() && a().kit;
+      if (!kit) return JSON.stringify({ registered: false });
+
+      // Run one action that changes nothing outside the tool, then undo it,
+      // and check the tool really went back to where it was.
+      const safe = Object.entries(kit.actions).find(([, x]) => !x.risky);
+      let ran = null, undone = null;
+      if (safe && kit.snapshot) {
+        const was = JSON.stringify(kit.snapshot());
+        try {
+          await a().perform({ action: '__nope__', args: {} });
+          ran = a().said[a().said.length - 1].kind;   // must be 'bad', not a throw
+        } catch (e) { ran = 'threw'; }
+        kit.restore(JSON.parse(was));
+        undone = JSON.stringify(kit.snapshot()) === was;
+      }
+
+      return JSON.stringify({
+        registered: true,
+        tool: kit.tool,
+        panel: !!document.querySelector('.bk-assist'),
+        tab: !!document.querySelector('.bk-assist-tab'),
+        actions: Object.keys(kit.actions).length,
+        risky: Object.values(kit.actions).filter((x) => x.risky).length,
+        described: Object.values(kit.actions).every((x) => typeof x.what === 'string' && x.what),
+        snapshot: !!kit.snapshot && !!kit.restore,
+        context: typeof kit.context === 'function' && !!kit.context(),
+        unknownAction: ran,
+        restored: undone,
+      });
+    })()"
+
+  answer=$(grep "SCRIPT RESULT" "$LOG" | tail -1)
+  echo "$answer" | grep -q '"registered":true'
+  check $? "$tool gives the assistant an action list"
+
+  if echo "$answer" | grep -q '"registered":true'; then
+    n=$(echo "$answer" | grep -o '"actions":[0-9]*' | cut -d: -f2)
+    [ "${n:-0}" -ge 1 ]
+    check $? "  ...with $n action(s), and the panel on screen"
+    echo "$answer" | grep -q '"panel":true.*"tab":true'
+    check $? "  ...the floating window is there"
+    echo "$answer" | grep -q '"described":true'
+    check $? "  ...every action says what it is for"
+    echo "$answer" | grep -q '"snapshot":true'
+    check $? "  ...it can photograph and restore this tool"
+    echo "$answer" | grep -q '"context":true'
+    check $? "  ...and it can see what is on screen"
+    echo "$answer" | grep -q '"unknownAction":"bad"'
+    check $? "  ...an action it does not have is refused, not thrown"
+    echo "$answer" | grep -q '"restored":true'
+    check $? "  ...and restoring a photograph puts the tool back"
+  fi
+done
+
+# The reply parser, on the shapes a model actually produces.
+run_app 20 --js "
+  return (async () => {
+    const r = window.bengkel.assistant.readReply;
+    const plain = r('{\"say\":\"hello\",\"do\":[{\"action\":\"x\",\"args\":{}}]}');
+    const fenced = r('here you go\\n\`\`\`json\\n{\"say\":\"hi\",\"do\":[]}\\n\`\`\`');
+    const prose = r('I cannot do that.');
+    return JSON.stringify({
+      plain: plain.say === 'hello' && plain.do.length === 1,
+      fenced: fenced.say === 'hi' && fenced.do.length === 0,
+      prose: prose.say === 'I cannot do that.' && prose.do.length === 0,
+    });
+  })()"
+answer=$(grep "SCRIPT RESULT" "$LOG" | tail -1)
+echo "$answer" | grep -q '"plain":true'
+check $? "a plain JSON reply is understood"
+echo "$answer" | grep -q '"fenced":true'
+check $? "so is one wrapped in a code fence"
+echo "$answer" | grep -q '"prose":true'
+check $? "and prose with no JSON in it is shown as it is, not dropped"
+
+if [ "${BENGKEL_ASK:-0}" = "1" ]; then
+  echo
+  echo "── asking claude for real ──────────────────────────────────────"
+  run_app 90 --open gerak --js "
+    return (async () => {
+      const wait = (ms) => new Promise(r => setTimeout(r, ms));
+      const a = () => window.bengkel.assistant;
+      for (let i = 0; i < 300 && !(a() && a().kit && window.gerak.state.bones.length); i++) await wait(100);
+      await a().ask('move the playhead to frame 12');
+      for (let i = 0; i < 500 && a().busy; i++) await wait(100);
+      const at = window.gerak.state.frame;
+      a().undo();
+      return JSON.stringify({ went: at, back: window.gerak.state.frame,
+                              depth: a().past.length });
+    })()"
+  answer=$(grep "SCRIPT RESULT" "$LOG" | tail -1)
+  echo "$answer" | grep -q '"went":12'
+  check $? "it understood \"move the playhead to frame 12\" and did it"
+  echo "$answer" | grep -q '"back":0'
+  check $? "and undo put the playhead back"
+else
+  echo
+  echo "  --   BENGKEL_ASK=1 tests/run.sh also asks claude for real (~1 min)"
+fi
+
+echo
 [ $FAIL -eq 0 ] && echo "$PASS passed, everything green" || echo "$PASS passed, $FAIL failed"
 exit $FAIL

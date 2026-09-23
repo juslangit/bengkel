@@ -133,6 +133,11 @@ say "compiled: $(du -h "$CONTENTS/MacOS/bengkel" | cut -f1)"
 cp "$ROOT/tools.json" "$CONTENTS/Resources/"
 [ -f "$ROOT/README.md" ] && cp "$ROOT/README.md" "$CONTENTS/Resources/"
 cp -R "$ROOT/web" "$CONTENTS/Resources/"
+# The assistant. It is injected into every tool's page rather than served, so
+# it has to travel inside the bundle alongside the studio page.
+mkdir -p "$CONTENTS/Resources/common/web"
+cp "$ROOT/common/web/assistant.js" "$ROOT/common/web/assistant.css" \
+   "$CONTENTS/Resources/common/web/"
 say "carrying: the studio page and the tool list ($(du -sh "$CONTENTS/Resources" | cut -f1))"
 
 # ── sign it ─────────────────────────────────────────────────────────

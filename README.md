@@ -146,6 +146,69 @@ Nothing crosses between the two servers. The native side owns the bridge, so
 neither tool needs the other's port, token or origin — which is also why
 neither can be reached from the other by accident.
 
+## The assistant
+
+Every tool has a floating **Assistant** panel — the tab on the right, or
+`⌘/`. Ask it in plain words and it does the thing:
+
+> *shorten the run to 20 frames and go to the last frame*
+
+It is Claude, running on this Mac through the `claude` command that is
+already installed and already signed in. There is no API key and nothing is
+billed per question; it draws on the same plan the terminal does. A turn
+takes a few seconds rather than being instant.
+
+### It can only press buttons the tool already has
+
+The assistant cannot write code, open files or run commands. Each tool hands
+it a list of actions — gerak gives it ten, jaring four, periksa one — and it
+may call those and nothing else. If you ask for something outside the list it
+says so rather than improvising.
+
+That is not a limitation dressed up as a feature. It is what makes the next
+part true.
+
+### Undo
+
+Every action is photographed before it runs, so **↶** in the panel's title
+bar puts the tool back exactly as it was. Twenty steps deep. In gerak it
+borrows gerak's own undo, so the assistant's changes and yours share one
+history and one order.
+
+### What it always asks about first
+
+Anything that reaches outside the tool stops and asks, however confident it
+is — writing into a game's `.glb`, copying a model into a game project,
+building a character, remeshing. Those cannot be taken back by an undo
+button, so they are never done on its say-so alone. Everything else happens
+immediately and undoes with one click.
+
+### Adding an action
+
+In the tool's `app.js`:
+
+```js
+if (window.bengkel && window.bengkel.assist) window.bengkel.assist({
+  tool: 'jaring',
+  about: 'one sentence, so it knows what this tool is for',
+  context: () => ({ /* what is on screen, as plain data */ }),
+  snapshot: () => ({ /* everything an action could change */ }),
+  restore: (shot) => { /* put it back */ },
+  actions: {
+    setQuadSize: {
+      what: 'Set how wide one quad should be, in centimetres',
+      args: { cm: 'a number' },
+      run: async ({ cm }) => { /* ... */ },
+    },
+    remesh: { what: '…', args: {}, risky: true, warn: 'This writes files.',
+              run: async () => { /* ... */ } },
+  },
+});
+```
+
+Nothing else is needed: bengkel injects the panel into every page it hosts.
+A tool run on its own never sees any of it.
+
 ## Where things are
 
 ```

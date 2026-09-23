@@ -1,0 +1,241 @@
+/* The assistant panel, floating over whichever tool is open.
+ *
+ * Every class is prefixed `bk-` because this stylesheet is injected into
+ * seven pages that know nothing about it, and a bare `.panel` or `.line`
+ * would land on top of whatever those pages already call that.
+ *
+ * It borrows nothing from the tools' own variables for the same reason —
+ * pasar, kulit and gerak have different palettes, and the assistant should
+ * look like the same thing in all of them.
+ */
+
+.bk-assist,
+.bk-assist-tab {
+  --bk-bg:     #1a1d24;
+  --bk-raised: #232732;
+  --bk-line:   #333846;
+  --bk-ink:    #e7e9ee;
+  --bk-dim:    #9aa1b1;
+  --bk-faint:  #6b7385;
+  --bk-key:    #7aa2f7;   /* the assistant's own blue, in every tool */
+  --bk-good:   #35c08a;
+  --bk-warn:   #e0b473;
+  --bk-bad:    #ef6461;
+  font-family: ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif;
+  color: var(--bk-ink);
+  box-sizing: border-box;
+}
+.bk-assist *, .bk-assist *::before, .bk-assist *::after { box-sizing: border-box; }
+
+/* ── the tab, when the panel is closed ─────────────────────────────── */
+
+.bk-assist-tab {
+  position: fixed;
+  right: 0;
+  bottom: 96px;
+  z-index: 2147483000;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--bk-ink);
+  background: var(--bk-raised);
+  border: 1px solid var(--bk-line);
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  writing-mode: vertical-rl;
+}
+.bk-assist-tab:hover { background: #2b3040; color: var(--bk-key); }
+.bk-assist-tab[hidden] { display: none; }
+
+/* ── the panel ─────────────────────────────────────────────────────── */
+
+.bk-assist {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 2147483000;
+  width: 380px;
+  max-width: calc(100vw - 36px);
+  max-height: min(560px, calc(100vh - 36px));
+  display: flex;
+  flex-direction: column;
+  background: var(--bk-bg);
+  border: 1px solid var(--bk-line);
+  border-radius: 12px;
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+.bk-assist[hidden] { display: none; }
+
+.bk-assist-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 10px 10px 13px;
+  background: var(--bk-raised);
+  border-bottom: 1px solid var(--bk-line);
+  cursor: grab;
+  user-select: none;
+  flex: none;
+}
+.bk-assist-bar:active { cursor: grabbing; }
+
+.bk-assist-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--bk-key);
+  flex: none;
+}
+/* It is thinking: the dot breathes rather than a spinner, which is quieter
+   next to a 3D viewport that is already moving. */
+.bk-assist.is-busy .bk-assist-dot { animation: bk-pulse 1.1s ease-in-out infinite; }
+@keyframes bk-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+.bk-assist-title {
+  flex: 1;
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+.bk-assist-icon {
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1;
+  color: var(--bk-dim);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 7px;
+  cursor: pointer;
+}
+.bk-assist-icon:hover:not(:disabled) { background: #323848; color: var(--bk-ink); }
+.bk-assist-icon:disabled { opacity: 0.3; cursor: default; }
+
+/* ── what has been said ────────────────────────────────────────────── */
+
+.bk-assist-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-height: 90px;
+}
+
+.bk-assist-line {
+  font-size: 0.86rem;
+  line-height: 1.55;
+  padding: 9px 11px;
+  border-radius: 9px;
+  word-wrap: break-word;
+}
+.bk-assist-line p { margin: 0 0 7px; }
+.bk-assist-line p:last-child { margin: 0; }
+.bk-assist-line code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.85em;
+  background: #12141a;
+  border: 1px solid var(--bk-line);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+/* What he said: aligned right, the way a chat reads. */
+.bk-assist-line.is-you {
+  align-self: flex-end;
+  max-width: 85%;
+  background: #2c3547;
+  border: 1px solid #3a4459;
+}
+.bk-assist-line.is-it { background: var(--bk-raised); border: 1px solid var(--bk-line); }
+.bk-assist-line.is-thinking { color: var(--bk-faint); font-style: italic; padding: 4px 11px; }
+
+/* Something was actually done. Green, because this is the line that says the
+   tool changed under him — it should be the thing his eye lands on. */
+.bk-assist-line.is-did {
+  background: #16281f;
+  border: 1px solid #245c47;
+  color: #bfe9d4;
+}
+.bk-assist-line.is-undone {
+  background: #21242c;
+  border: 1px solid var(--bk-line);
+  color: var(--bk-dim);
+}
+.bk-assist-line.is-skip { color: var(--bk-faint); border: 1px dashed var(--bk-line); }
+.bk-assist-line.is-bad {
+  background: #2b1a1a;
+  border: 1px solid #5c2f2e;
+  color: #f1a9a7;
+}
+
+/* The question before something that reaches outside the tool. */
+.bk-assist-line.is-ask {
+  background: #2a2015;
+  border: 1px solid #5c4526;
+  color: #e6d2b4;
+}
+.bk-assist-buttons { display: flex; gap: 8px; margin-top: 4px; }
+.bk-assist-buttons button {
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  border: 1px solid var(--bk-line);
+  background: var(--bk-raised);
+  color: var(--bk-ink);
+}
+.bk-assist-buttons [data-yes] {
+  background: var(--bk-warn);
+  border-color: var(--bk-warn);
+  color: #241a0c;
+}
+
+/* ── the box you type in ───────────────────────────────────────────── */
+
+.bk-assist-ask {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 10px;
+  border-top: 1px solid var(--bk-line);
+  background: var(--bk-raised);
+  flex: none;
+}
+.bk-assist-ask textarea {
+  flex: 1;
+  font: inherit;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--bk-ink);
+  background: #12141a;
+  border: 1px solid var(--bk-line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  resize: none;
+  max-height: 140px;
+}
+.bk-assist-ask textarea:focus {
+  outline: none;
+  border-color: var(--bk-key);
+}
+.bk-assist-go {
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 650;
+  color: #10141c;
+  background: var(--bk-key);
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 14px;
+  cursor: pointer;
+}
+.bk-assist-go:hover { background: #8fb4ff; }
+.bk-assist.is-busy .bk-assist-go { opacity: 0.5; pointer-events: none; }

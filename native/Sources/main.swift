@@ -126,8 +126,16 @@ final class ToolServer {
         var environment = ProcessInfo.processInfo.environment
         environment[tool.portEnv] = "0"          // let the system pick
         environment["PYTHONUNBUFFERED"] = "1"
-        environment["GERAK_PARENT"] = String(ProcessInfo.processInfo.processIdentifier)
-        environment["BONEKA_PARENT"] = String(ProcessInfo.processInfo.processIdentifier)
+        /* Arm each tool's watchdog, so a force-quit or a crash does not leave
+         * a server holding a port forever. gerak and boneka each look for
+         * their own name; everything built on common/serve.py looks for
+         * BENGKEL_PARENT — which was never set, so five of the seven tools
+         * had a watchdog that could not arm. A stale hantar server from days
+         * earlier was still running when this was found. */
+        let me = String(ProcessInfo.processInfo.processIdentifier)
+        environment["GERAK_PARENT"] = me
+        environment["BONEKA_PARENT"] = me
+        environment["BENGKEL_PARENT"] = me
         environment["BENGKEL"] = "1"
         process.environment = environment
 
@@ -604,6 +612,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
         bridge.add(self, name: "bengkel")
         bridge.addUserScript(WKUserScript(
             source: Self.bridgeScript, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+
+        /* The assistant, in every tool, from one place.
+         *
+         * It is injected rather than added to each tool's page for the same
+         * reason the bridge is: a tool run on its own is unchanged, and a
+         * seventh tool gets the assistant without being told about it. It
+         * goes in at documentEnd because it builds its own panel and wants a
+         * <body> to put it in. */
+        for file in ["assistant.css", "assistant.js"] {
+            guard let text = try? String(contentsOf:
+                Paths.resources.appendingPathComponent("common/web/\(file)"),
+                encoding: .utf8) else { continue }
+            let source = file.hasSuffix(".css")
+                ? "(() => { const s = document.createElement('style');"
+                  + " s.textContent = \(Self.jsString(text)); document.head.appendChild(s); })()"
+                : text
+            bridge.addUserScript(WKUserScript(
+                source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         config.userContentController = bridge
 
         let web = WKWebView(frame: stage.bounds, configuration: config)
@@ -679,6 +706,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
     /// A tool checks for `window.bengkel` and, if it is not there, behaves
     /// exactly as it always did — which is what keeps each of them a whole
     /// program rather than a component of this one.
+    /* ── the assistant's brain ───────────────────────────────────────
+     *
+     * There is no Anthropic API key on this Mac, and Luqman chose not to buy
+     * one: the `claude` command line tool is already here and already signed
+     * in, so bengkel asks that. It costs nothing per question beyond his
+     * existing plan, and it can read the files the tools are working on,
+     * which an API call could not.
+     *
+     * Run per question rather than kept alive. A turn takes a few seconds,
+     * which is not worth the complication of a process that has to be
+     * watched and restarted - the same reasoning as gerak's D-002 about
+     * Blender. `--resume` carries the conversation instead.
+     */
+    private func askClaude(_ prompt: String, session: String,
+                           then done: @escaping ([String: Any]) -> Void) {
+        let claude = ["\(NSHomeDirectory())/.local/bin/claude", "/usr/local/bin/claude",
+                      "/opt/homebrew/bin/claude"]
+            .first { FileManager.default.isExecutableFile(atPath: $0) }
+        guard let claude else {
+            done(["error": "The claude command was not found. The assistant needs it."])
+            return
+        }
+
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: claude)
+        var args = ["-p", prompt, "--output-format", "json"]
+        if !session.isEmpty { args += ["--resume", session] }
+        task.arguments = args
+        // Somewhere harmless to run: the assistant is told the paths it may
+        // care about, and should not inherit a working directory by accident.
+        task.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
+
+        let out = Pipe(), err = Pipe()
+        task.standardOutput = out
+        task.standardError = err
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            var reply: [String: Any]
+            do {
+                try task.run()
+                let data = out.fileHandleForReading.readDataToEndOfFile()
+                let problem = String(decoding: err.fileHandleForReading.readDataToEndOfFile(),
+                                     as: UTF8.self)
+                task.waitUntilExit()
+
+                if let envelope = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    reply = [
+                        "text": envelope["result"] as? String ?? "",
+                        "session": envelope["session_id"] as? String ?? session,
+                    ]
+                    if let isError = envelope["is_error"] as? Bool, isError {
+                        reply["error"] = envelope["result"] as? String ?? "the assistant failed"
+                    }
+                } else {
+                    reply = ["error": problem.isEmpty
+                        ? "the assistant gave nothing back" : problem]
+                }
+            } catch {
+                reply = ["error": error.localizedDescription]
+            }
+            let settled = reply
+            DispatchQueue.main.async { done(settled) }
+        }
+    }
+
+    /// A JavaScript string literal, quoted properly, so a stylesheet with a
+    /// quote or a backslash in it cannot break the script it goes into.
+    static func jsString(_ value: String) -> String {
+        let data = try! JSONSerialization.data(withJSONObject: [value])
+        let array = String(decoding: data, as: UTF8.self)
+        return String(array.dropFirst().dropLast())
+    }
+
     private static let bridgeScript = """
     window.bengkel = {
       inside: true,
@@ -705,6 +805,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
       note(what) { return this.send('note', what); },
       openPiece(piece, tool) { return this.send('openPiece', { piece, tool }); },
       forgetPiece(piece) { return this.send('forgetPiece', { piece }); },
+      ask(prompt, session) { return this.send('ask', { prompt, session: session || '' }); },
+
+      /* A tool registers what the assistant may do here.
+       *
+       * This lives in the bridge, which goes in at documentStart, rather than
+       * in assistant.js, which goes in at documentEnd — because a tool's page
+       * is an ES module and those run before the documentEnd scripts do. The
+       * first version put `assist` in assistant.js, and every tool's
+       * registration ran against an undefined function and was silently lost.
+       * So the bridge takes it and holds it until the assistant is there. */
+      _kit: null,
+      assist(kit) {
+        this._kit = kit;
+        if (this._mountAssistant) this._mountAssistant(kit);
+      },
       onReceive(fn) { this._receive = fn; },
       _deliver(payload) { if (this._receive) this._receive(payload); },
     };
@@ -721,6 +836,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
         let from = views.first(where: { $0.value === message.webView })?.key ?? "?"
 
         switch what {
+        case "ask":
+            askClaude(payload["prompt"] as? String ?? "",
+                      session: payload["session"] as? String ?? "") { [weak self] reply in
+                self?.answer(message.webView, id, reply)
+            }
+
         case "tools":
             answer(message.webView, id, tools.map { [
                 "id": $0.id, "name": $0.name, "tagline": $0.tagline,
