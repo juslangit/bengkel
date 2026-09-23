@@ -44,7 +44,7 @@ MARK = "@@BK@@"
 PORT = int(os.environ.get("BONEKA_PORT", "8777"))
 
 # One machine-readable line at startup, so a program that launches boneka -
-# sanggar does - can find out which port it settled on and what this run's
+# bengkel does - can find out which port it settled on and what this run's
 # token is, instead of scraping the human-readable log.
 READY_MARK = "@@BONEKA-READY@@"
 TOKEN = secrets.token_urlsafe(18)
