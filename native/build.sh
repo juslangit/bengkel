@@ -97,6 +97,15 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
   <!-- The window draws its own top bar over a transparent title strip. -->
   <key>NSRequiresAquaSystemAppearance</key> <false/>
 
+  <!-- What the folder dialogs say, if macOS ever shows one. Without these it
+       asks in its own words, which name no reason at all. -->
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>bengkel reads the 3D models in your project folder on the Desktop.</string>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>bengkel keeps your clips and exports in Documents, and reads models from there.</string>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>bengkel reads 3D models you have downloaded.</string>
+
   <!-- bengkel talks to its own server on 127.0.0.1 over plain HTTP. Without
        this, App Transport Security refuses the connection and the window
        comes up empty. -->
@@ -127,11 +136,21 @@ cp -R "$ROOT/web" "$CONTENTS/Resources/"
 say "carrying: the studio page and the tool list ($(du -sh "$CONTENTS/Resources" | cut -f1))"
 
 # ── sign it ─────────────────────────────────────────────────────────
-# Ad-hoc, because there is no Developer ID on this machine and none is needed
-# for an app that never leaves it. Without any signature at all, macOS refuses
-# to launch an arm64 binary.
-codesign --force --deep --sign - "$APP" 2>/dev/null
-codesign --verify --verbose=1 "$APP" 2>&1 | sed 's/^/  /'
+# With a certificate, not ad-hoc. An ad-hoc signature names the hash of the
+# app's own bytes, so every rebuild is a different app to macOS and every
+# folder permission it was granted is dropped - which is why bengkel kept
+# asking to read the Desktop. See common/sign.sh for the whole story.
+SIGNER="$ROOT/common/sign.sh"
+if [ -x "$SIGNER" ]; then
+  "$SIGNER" "$APP"
+else
+  # gerak is its own repository and can be built outside bengkel, where the
+  # shared signer is not there. Ad-hoc keeps it launchable; macOS will ask for
+  # folder permissions again after each rebuild, which is worth saying out loud.
+  codesign --force --sign - "$APP" 2>/dev/null
+  echo "  signed ad-hoc — bengkel's common/sign.sh was not found, so macOS will"
+  echo "  ask for folder permissions again after every rebuild."
+fi
 
 echo
 say "built $APP"
