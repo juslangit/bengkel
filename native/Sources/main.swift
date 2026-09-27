@@ -711,8 +711,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
      * There is no Anthropic API key on this Mac, and Luqman chose not to buy
      * one: the `claude` command line tool is already here and already signed
      * in, so bengkel asks that. It costs nothing per question beyond his
-     * existing plan, and it can read the files the tools are working on,
-     * which an API call could not.
+     * existing plan, and it can read the files the tools are working on in
+     * ~/Documents/bengkel, which an API call could not. It can do nothing
+     * else - see the flags below.
      *
      * Run per question rather than kept alive. A turn takes a few seconds,
      * which is not worth the complication of a process that has to be
@@ -731,12 +732,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
 
         let task = Process()
         task.executableURL = URL(fileURLWithPath: claude)
-        var args = ["-p", prompt, "--output-format", "json"]
+        // Read-only, and only inside the workshop. Without these flags the
+        // command picked up ~/.claude/settings.json - bypassPermissions - so
+        // every question ran a Claude that could run shell commands and edit
+        // any file on the Mac, steerable by text inside a downloaded model or
+        // a search result. --restricted drops the command-running tools,
+        // ignores the user settings (and so refuses bypassPermissions) and
+        // confines the file tools to the working directory; --tools leaves it
+        // reading only; --strict-mcp-config keeps out MCP servers, some of
+        // which spend credits.
+        var args = ["-p", prompt, "--output-format", "json",
+                    "--restricted", "--tools", "Read,Glob,Grep",
+                    "--strict-mcp-config", "--permission-mode", "dontAsk"]
         if !session.isEmpty { args += ["--resume", session] }
         task.arguments = args
-        // Somewhere harmless to run: the assistant is told the paths it may
-        // care about, and should not inherit a working directory by accident.
-        task.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory())
+        // The workshop folder, which is also the only place it may read.
+        task.currentDirectoryURL = Paths.data
 
         let out = Pipe(), err = Pipe()
         task.standardOutput = out
