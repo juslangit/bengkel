@@ -8,3 +8,6 @@ __pycache__/
 # gerak lives in here but keeps its own git history for now. boneka joined
 # this repo on 2026-09-23, history and all; it still runs perfectly well alone.
 gerak/
+
+# Project record: built locally, never committed (it holds session logs)
+docs/index.html
