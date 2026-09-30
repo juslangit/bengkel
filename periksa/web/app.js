@@ -137,7 +137,7 @@ async function openSheet() {
   $('#sheet-list').innerHTML = '<p class="quiet" style="padding:14px">Looking…</p>';
   // Only .glb: periksa reads the description at the front of one, and there
   // is no such thing in an .fbx or a .blend.
-  libraryItems = (await api('/api/library')).filter((i) => i.ext === 'glb');
+  libraryItems = (await api('/api/library')).items.filter((i) => i.ext === 'glb');
   paintSheet();
 }
 

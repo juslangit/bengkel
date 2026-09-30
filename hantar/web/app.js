@@ -186,7 +186,7 @@ async function openSheet() {
   $('#find').value = '';
   $('#find').focus();
   $('#sheet-list').innerHTML = '<p class="quiet" style="padding:14px">Looking…</p>';
-  libraryItems = await api('/api/library');
+  libraryItems = (await api('/api/library')).items;
   paintSheet();
 }
 
