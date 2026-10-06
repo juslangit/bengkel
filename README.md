@@ -53,6 +53,28 @@ and origin checks, the model library, and the way to run a headless Blender
 job, plus the look and the bridge that every page loads. Five tools each
 reinventing those is how one app comes to look and behave like five.
 
+## Blender, through Blender MCP
+
+Every tool that needs Blender (boneka, jaring, kulit, gerak and hantar) uses
+**one** Blender, reached through the Blender MCP add-on on port 9876. It is the
+same Blender Claude drives through its `blender` MCP server, so each side can see
+what the other has made.
+
+- **Opened for you, hidden.** If nothing is listening on 9876, the first tool to
+  need Blender opens it without taking focus, and it hides itself once its window
+  is up. Click the Dock icon to watch it work. It is a normal Blender, not
+  `--background`, because the add-on cannot run headless.
+- **Each tool in its own scene.** boneka keeps a scene called `boneka`. A one-off
+  job from jaring, kulit, gerak or hantar gets a scene of its own, which is removed
+  afterwards along with everything that job created. Whatever scene was showing
+  is put back, so nobody works in anyone else's scene.
+- **Never closed by bengkel.** It is shared, so it is not bengkel's to quit.
+
+The code is in `common/mcp.py`. Scripts running inside Blender use
+`common/blender/workshop.py`: `fresh_scene()` and `save_blend()` take the place
+of `read_factory_settings` and `save_as_mainfile`, both of which would reach past
+the job's own scene.
+
 ## How they fit together
 
 1. **pasar finds it** — one search over three libraries. What you bring home
@@ -71,7 +93,7 @@ reinventing those is how one app comes to look and behave like five.
 7. **hantar ships it** — into one of the game projects, under that project's
    own naming, standing on the floor, in the format that engine takes. It is
    the only tool here that writes outside the workshop, and it writes nowhere
-   but `~/Desktop/project/game/`.
+   but `~/Desktop/projects/game/`.
 
 **boneka → gerak.** A button in boneka's *Take it away* section says **Animate
 it in gerak**. It exports a `.glb` and opens it next door, ready to pose.
@@ -113,7 +135,7 @@ place on the rail, starts it on demand and includes it in the hand-off:
   "blurb": "...",
   "symbol": "shippingbox",
   "accent": "#5bc8a8",
-  "root": "~/Desktop/project/3d/gudang",
+  "root": "~/Desktop/projects/3d/gudang",
   "server": "server.py",
   "noOpen": "--no-open",
   "portEnv": "GUDANG_PORT",

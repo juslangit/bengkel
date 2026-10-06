@@ -1,11 +1,19 @@
 """
 The Blender half of boneka.
 
-Blender is started once and left running. It reads one JSON command per line on
-stdin and answers with one JSON event per line on stdout, each marked with
-@@BK@@ so that Blender's own chatter can be ignored. Keeping one process alive
-is what makes the buttons instant: the scene, the rig and the pose are all still
-there from the last command.
+It lives in the shared Blender that bengkel reaches through Blender MCP: the
+server loads this file once as a module, calls setup(), and then hands it one
+command at a time with run(). It answers with one JSON event per line, each
+marked with @@BK@@, appended to a file the server reads as it grows - so the
+page still watches the model go together part by part, even though Blender is
+busy until the command is done. Keeping it loaded is what makes the buttons
+instant: the scene, the rig and the pose are all still there from the last one.
+
+Everything happens in a scene called `boneka`, and whatever scene was showing
+before is put back after each command, so it never works in anyone else's.
+
+The old way still works for the checks in tests/check.py, reading commands
+on stdin and answering on stdout:
 
     blender --background --python worker.py -- <session-dir>
 """
@@ -18,14 +26,19 @@ import traceback
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
+WORKSHOP = os.path.join(HERE, "..", "..", "common", "blender")
+if WORKSHOP not in sys.path:
+    sys.path.insert(0, WORKSHOP)
 
 import bpy                                            # noqa: E402
 
 import anim                                           # noqa: E402
 import build                                          # noqa: E402
+import design                                         # noqa: E402
 import recipes                                        # noqa: E402
 import rig                                            # noqa: E402
 import sculpt                                         # noqa: E402
+from workshop import save_blend                       # noqa: E402
 
 MARK = "@@BK@@"
 SESSION = sys.argv[-1] if "--" in sys.argv else os.path.join(HERE, "..", "sessions", "default")
@@ -35,9 +48,18 @@ STATE = {"plan": None, "rig": None, "body": None, "anim": None, "counter": 0,
          "imported": False}
 
 
+EVENTS = None          # the file events go to under MCP; stdout when None
+SCENE = "boneka"
+
+
 def emit(event, **fields):
     fields["event"] = event
-    sys.stdout.write("%s %s\n" % (MARK, json.dumps(fields)))
+    line = "%s %s\n" % (MARK, json.dumps(fields))
+    if EVENTS:
+        with open(EVENTS, "a") as f:
+            f.write(line)
+        return
+    sys.stdout.write(line)
     sys.stdout.flush()
 
 
@@ -58,7 +80,12 @@ def cmd_build(msg):
     build.TEXTURES = msg.get("textures") or {}
     STATE["texture_credits"] = msg.get("texture_credits") or []
     STATE["surfaces"] = []
-    plan = recipes.plan_from_prompt(prompt, palette=msg.get("palette"))
+    if msg.get("design"):
+        # a recipe Claude designed for something boneka has none of its own for,
+        # checked again here - the server checked it, but this is what builds it
+        plan = design.plan_from_design(msg["design"], prompt, palette=msg.get("palette"))
+    else:
+        plan = recipes.plan_from_prompt(prompt, palette=msg.get("palette"))
     STATE.update(plan=plan, rig=None, body=None, anim=None, imported=False)
     STATE["counter"] += 1
     tag = "b%03d" % STATE["counter"]
@@ -200,7 +227,7 @@ def cmd_export(msg):
                                  add_leaf_bones=False, bake_anim=animated,
                                  path_mode="COPY", embed_textures=True)
     elif fmt == "blend":
-        bpy.ops.wm.save_as_mainfile(filepath=path, copy=True)
+        save_blend(path)
     else:
         raise RuntimeError("boneka exports glb, fbx or blend")
     # only the surfaces this model actually uses are inside the file
@@ -276,6 +303,58 @@ COMMANDS = {"build": cmd_build, "rig": cmd_rig, "animate": cmd_animate,
             "export": cmd_export, "ping": cmd_ping}
 
 
+def handle(msg):
+    name = msg.get("cmd")
+    handler = COMMANDS.get(name)
+    if handler is None:
+        emit("error", message="unknown command %r" % name)
+        return
+    try:
+        handler(msg)
+    except Exception as exc:                           # noqa: BLE001
+        emit("error", message=str(exc) or exc.__class__.__name__,
+             detail=traceback.format_exc()[-1200:], cmd=name)
+    emit("idle", cmd=name)
+
+
+class _own_scene:
+    """Work in the `boneka` scene, and put back whatever was showing."""
+
+    def __enter__(self):
+        wm = bpy.context.window_manager
+        self.shown = [w.scene for w in wm.windows]
+        scene = bpy.data.scenes.get(SCENE) or bpy.data.scenes.new(SCENE)
+        for w in wm.windows:
+            w.scene = scene
+        return scene
+
+    def __exit__(self, *exc):
+        for w, scene in zip(bpy.context.window_manager.windows, self.shown):
+            try:
+                w.scene = scene
+            except ReferenceError:
+                pass
+        return False
+
+
+def setup(session, events):
+    """Called once by the server through Blender MCP."""
+    global SESSION, EVENTS
+    SESSION, EVENTS = os.path.abspath(session), events
+    os.makedirs(SESSION, exist_ok=True)
+    with _own_scene():
+        build.clear_scene()
+    STATE.update(plan=None, rig=None, body=None, anim=None, imported=False)
+    emit("ready", blender=bpy.app.version_string, session=SESSION,
+         moves=sorted(anim.MOVES), props=sorted(recipes.PROPS))
+
+
+def run(msg):
+    """One command from the server, through Blender MCP."""
+    with _own_scene():
+        handle(msg)
+
+
 def main():
     os.makedirs(SESSION, exist_ok=True)
     build.clear_scene()
@@ -290,17 +369,7 @@ def main():
         except ValueError:
             emit("error", message="could not read that command")
             continue
-        name = msg.get("cmd")
-        handler = COMMANDS.get(name)
-        if handler is None:
-            emit("error", message="unknown command %r" % name)
-            continue
-        try:
-            handler(msg)
-        except Exception as exc:                       # noqa: BLE001
-            emit("error", message=str(exc) or exc.__class__.__name__,
-                 detail=traceback.format_exc()[-1200:], cmd=name)
-        emit("idle", cmd=name)
+        handle(msg)
 
 
 if __name__ == "__main__":

@@ -578,6 +578,22 @@ function handle(ev) {
       }
       break;
 
+    case 'designing':
+      // boneka has no recipe for this, so Claude is designing one
+      if (ev.stage === 'reference') {
+        setStatus('no recipe for "' + ev.subject + '" — looking it up', 'busy');
+        logLine('no built-in recipe for ' + ev.subject + ': asking Claude to design one');
+      } else if (ev.stage === 'thinking') {
+        setStatus('Claude is designing a ' + ev.subject + ' — a minute or two', 'busy');
+        logLine('Claude is designing it, from ' + ev.references + ' reference photo' +
+                (ev.references === 1 ? '' : 's'));
+      } else if (ev.stage === 'fixing') {
+        logLine('its recipe needed a fix (' + ev.message + '), asking again');
+      } else if (ev.stage === 'done') {
+        logLine('Claude designed ' + ev.parts + ' parts in ' + ev.seconds + 's; building');
+      }
+      break;
+
     case 'meshy':
       setStatus('Meshy: ' + ev.stage + (ev.progress ? ' ' + ev.progress + '%' : ''), 'busy');
       $('meshy-state').textContent = 'Meshy: ' + ev.stage;

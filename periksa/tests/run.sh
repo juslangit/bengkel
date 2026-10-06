@@ -34,7 +34,7 @@ for k in sys.argv[1].split("."):
     if d is None: print(""); raise SystemExit
 print(d if not isinstance(d, (list, dict)) else json.dumps(d))' "$1"; }
 
-MODEL="${PERIKSA_TEST_MODEL:-$HOME/Desktop/project/game/The Forsaken/docs/character-revamp/models/paladin.glb}"
+MODEL="${PERIKSA_TEST_MODEL:-$HOME/Desktop/projects/game/The Forsaken/docs/character-revamp/models/paladin.glb}"
 
 echo
 echo "── starting up ─────────────────────────────────────────────────"

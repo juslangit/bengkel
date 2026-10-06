@@ -4,7 +4,8 @@ boneka - the local server.
 
 It does three jobs and nothing else:
 
-  1. keeps one Blender running in the background and talks to it in JSON,
+  1. talks to Blender through Blender MCP - the one shared Blender every
+     bengkel tool and Claude use, opened hidden if it is not running,
   2. serves the page you look at and the .glb files Blender writes,
   3. pushes Blender's progress to the page as it happens, so you watch the
      model being built rather than waiting for it.
@@ -23,6 +24,7 @@ import mimetypes
 import os
 import queue
 import secrets
+import shutil
 import subprocess
 import sys
 import threading
@@ -38,8 +40,11 @@ from urllib.parse import urlparse, parse_qs
 HERE = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(HERE, "web")
 CLIPS = os.path.join(HERE, "animations")
-BLENDER = os.environ.get(
-    "BONEKA_BLENDER", "/Applications/Blender.app/Contents/MacOS/Blender")
+COMMON = os.path.join(os.path.dirname(HERE), "common")
+sys.path.insert(0, COMMON)
+import mcp                                                  # noqa: E402
+
+BLENDER = "Blender MCP on port %d (shared, opened hidden if needed)" % mcp.PORT
 MARK = "@@BK@@"
 PORT = int(os.environ.get("BONEKA_PORT", "8777"))
 
@@ -60,44 +65,115 @@ def log(*parts):
 # --------------------------------------------------------------------------
 
 class Worker:
+    """boneka's Blender, which is the shared one bengkel reaches through MCP.
+
+    blender/worker.py is loaded into it once as a module. Commands go in one
+    at a time over MCP; events come back through a file in the session folder,
+    read as it grows, because Blender does not answer an MCP call until the
+    command is finished and the page wants to watch it happen.
+    """
+
+    MODULES = ("boneka_worker", "worker", "anim", "build", "design", "recipes",
+               "rig", "sculpt", "palette", "workshop")
+
     def __init__(self, session):
         self.session = session
         os.makedirs(session, exist_ok=True)
+        self.events = os.path.join(session, ".events.jsonl")
+        open(self.events, "w").close()
         self.lock = threading.Lock()
         self.listeners = []
         self.history = []
         self.ready = threading.Event()
         self.busy = False
-        self.proc = None
+        self.running = True
+        self.commands = queue.Queue()
         self.start()
 
     def start(self):
-        if not os.path.exists(BLENDER):
-            raise SystemExit(
-                "Blender is not at %s - set BONEKA_BLENDER to where it is" % BLENDER)
-        self.proc = subprocess.Popen(
-            [BLENDER, "--background", "--factory-startup", "--python",
-             os.path.join(HERE, "blender", "worker.py"), "--", self.session],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, text=True, bufsize=1)
         threading.Thread(target=self._read, daemon=True).start()
+        threading.Thread(target=self._serve, daemon=True).start()
+
+    def _load(self):
+        """Put a fresh copy of the worker into the shared Blender."""
+        mcp.ensure()
+        mcp.execute(
+            "import importlib.util, sys\n"
+            "for _m in %r:\n"
+            "    sys.modules.pop(_m, None)\n"
+            "for _p in (%r, %r):\n"
+            "    if _p not in sys.path:\n"
+            "        sys.path.insert(0, _p)\n"
+            "_spec = importlib.util.spec_from_file_location('boneka_worker', %r)\n"
+            "_mod = importlib.util.module_from_spec(_spec)\n"
+            "sys.modules['boneka_worker'] = _mod\n"
+            "_spec.loader.exec_module(_mod)\n"
+            "_mod.setup(%r, %r)\n"
+            % (self.MODULES, os.path.join(HERE, "blender"),
+               os.path.join(COMMON, "blender"),
+               os.path.join(HERE, "blender", "worker.py"),
+               self.session, self.events),
+            timeout=120)
+
+    def _serve(self):
+        try:
+            self._load()
+        except mcp.BlenderError as exc:
+            self.publish({"event": "error", "message": "Blender MCP: %s" % exc})
+            self.publish({"event": "stopped",
+                          "message": "Could not reach Blender MCP - restart boneka"})
+            return
+        while self.running:
+            message = self.commands.get()
+            if message is None:
+                return
+            code = ("import json, sys\n"
+                    "_w = sys.modules.get('boneka_worker')\n"
+                    "if _w is None:\n"
+                    "    raise RuntimeError('boneka is not loaded in this Blender')\n"
+                    "_w.run(json.loads(%r))\n" % json.dumps(message))
+            try:
+                mcp.execute(code, timeout=1800)
+            except mcp.BlenderError as exc:
+                # Blender restarted or the worker went missing: load it again
+                # so the next button works, and say what happened to this one
+                self.publish({"event": "error", "message": "Blender MCP: %s" % exc,
+                              "cmd": message.get("cmd")})
+                self.publish({"event": "idle", "cmd": message.get("cmd")})
+                try:
+                    self._load()
+                except mcp.BlenderError:
+                    pass
 
     def _read(self):
-        for line in self.proc.stdout:
-            line = line.rstrip("\n")
-            if not line.startswith(MARK):
-                continue
+        """Follow the events file the worker appends to."""
+        offset = 0
+        pending = ""
+        while self.running:
             try:
-                event = json.loads(line[len(MARK):].strip())
-            except ValueError:
+                with open(self.events) as f:
+                    f.seek(offset)
+                    chunk = f.read()
+                    offset = f.tell()
+            except OSError:
+                chunk = ""
+            if not chunk:
+                time.sleep(0.05)
                 continue
-            if event.get("event") == "ready":
-                self.ready.set()
-            if event.get("event") == "idle":
-                self.busy = False
-            self.publish(event)
-        self.publish({"event": "stopped",
-                      "message": "Blender closed - restart boneka"})
+            pending += chunk
+            *lines, pending = pending.split("\n")
+            for line in lines:
+                if not line.startswith(MARK):
+                    continue
+                try:
+                    event = json.loads(line[len(MARK):].strip())
+                except ValueError:
+                    continue
+                if event.get("event") == "ready":
+                    self.ready.set()
+                if event.get("event") == "idle":
+                    self.busy = False
+                self.publish(event)
 
     def publish(self, event):
         with self.lock:
@@ -118,21 +194,15 @@ class Worker:
                 self.listeners.remove(q)
 
     def send(self, message):
-        if self.proc.poll() is not None:
-            raise RuntimeError("Blender is not running any more")
+        if not self.running:
+            raise RuntimeError("boneka is stopping")
         self.busy = True
-        self.proc.stdin.write(json.dumps(message) + "\n")
-        self.proc.stdin.flush()
+        self.commands.put(message)
 
     def stop(self):
-        try:
-            self.proc.stdin.close()
-        except Exception:
-            pass
-        try:
-            self.proc.wait(timeout=5)
-        except Exception:
-            self.proc.kill()
+        # the Blender is shared - leave it running for whoever else uses it
+        self.running = False
+        self.commands.put(None)
 
 
 # --------------------------------------------------------------------------
@@ -281,6 +351,7 @@ PALETTE_CACHE = os.path.join(HERE, "palettes")
 
 sys.path.insert(0, os.path.join(HERE, "blender"))
 import palette as palettes                                 # noqa: E402
+import design                                              # noqa: E402
 
 
 def cached_palette(name):
@@ -393,6 +464,86 @@ CURATED = {
 
 # How hard each surface pushes, how rough it is and how metallic, all live in
 # tools/pbr.py next to the code that derives the maps.
+
+
+# --------------------------------------------------------------------------
+# Claude, for whatever boneka has no recipe of its own (blender/design.py)
+#
+# It runs as the `claude` command already signed in on this Mac, locked down
+# the way bengkel's assistant is (D-029): --restricted, no tools but Read,
+# confined to one folder holding nothing but the reference photos, no MCP
+# servers. It answers with a recipe in a fixed shape (--json-schema), which is
+# checked before it goes anywhere near Blender.
+# --------------------------------------------------------------------------
+
+CLAUDE = (os.environ.get("BONEKA_CLAUDE") or shutil.which("claude")
+          or os.path.expanduser("~/.local/bin/claude"))
+
+
+def ask_claude(text, folder, resume=None, timeout=900):
+    cmd = [CLAUDE, "-p", text, "--output-format", "json",
+           "--json-schema", json.dumps(design.SCHEMA),
+           "--restricted", "--tools", "Read", "--strict-mcp-config",
+           "--permission-mode", "dontAsk"]
+    if resume:
+        cmd += ["--resume", resume]
+    proc = subprocess.run(cmd, cwd=folder, capture_output=True, text=True,
+                          timeout=timeout)
+    try:
+        out = json.loads(proc.stdout)
+    except ValueError:
+        raise RuntimeError((proc.stderr or proc.stdout or "no answer").strip()[-300:])
+    if out.get("is_error"):
+        raise RuntimeError(str(out.get("result") or "Claude reported an error")[:300])
+    return out.get("structured_output"), out.get("session_id")
+
+
+def design_job(worker, payload):
+    """Look it up, have Claude design a recipe for it, check it, then build it."""
+    prompt = payload.get("prompt", "")
+    subject = " ".join(design.subject_words(prompt)[:3])
+    folder = os.path.join(worker.session, "design_%s" % time.strftime("%H%M%S"))
+    os.makedirs(folder, exist_ok=True)
+    try:
+        worker.publish({"event": "designing", "stage": "reference", "subject": subject})
+        refs = []
+        try:
+            for i, image in enumerate(reference_images(subject, limit=3)):
+                body, _ = fetch_thumbnail(image["thumb"])
+                name = "ref_%d.jpg" % (i + 1)
+                with open(os.path.join(folder, name), "wb") as f:
+                    f.write(body)
+                refs.append(name)
+        except Exception as exc:                           # noqa: BLE001
+            log("no reference photos:", exc)       # it can design without them
+
+        worker.publish({"event": "designing", "stage": "thinking", "subject": subject,
+                        "references": len(refs)})
+        started = time.time()
+        found, session_id = ask_claude(design.brief(prompt, refs), folder)
+        problems = design.check(found) if found else ["no recipe came back"]
+        if problems and session_id:
+            # one chance to put it right, told exactly what was wrong
+            worker.publish({"event": "designing", "stage": "fixing",
+                            "subject": subject, "message": problems[0]})
+            found, session_id = ask_claude(
+                "boneka could not build that recipe: %s. Send the whole recipe "
+                "again with that fixed." % "; ".join(problems), folder,
+                resume=session_id)
+            problems = design.check(found) if found else ["no recipe came back"]
+        if problems:
+            raise RuntimeError("its recipe could not be built - " + problems[0])
+
+        with open(os.path.join(folder, "design.json"), "w") as f:
+            json.dump(found, f, indent=1)
+        worker.publish({"event": "designing", "stage": "done", "subject": subject,
+                        "parts": len(found["parts"]),
+                        "seconds": round(time.time() - started)})
+        worker.send(dict(payload, design=found))
+    except Exception as exc:                               # noqa: BLE001
+        worker.publish({"event": "error",
+                        "message": "Claude could not design it: %s" % exc})
+        worker.publish({"event": "idle", "cmd": "build"})
 
 
 sys.path.insert(0, os.path.join(HERE, "tools"))
@@ -721,6 +872,14 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json(400, {"error": str(exc)})
                 payload = dict(payload, palette=found["colors"],
                                palette_name=found["name"])
+            # a design only ever comes from design_job, never from the page
+            payload.pop("design", None)
+            if (cmd == "build" and not payload.get("template")
+                    and design.needs_design(payload.get("prompt", ""))):
+                WORKER.busy = True
+                threading.Thread(target=design_job, args=(WORKER, payload),
+                                 daemon=True).start()
+                return self._json(200, {"ok": True, "designing": True})
             try:
                 WORKER.send(payload)
             except Exception as exc:                    # noqa: BLE001

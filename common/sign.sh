@@ -12,7 +12,7 @@
 # Every rebuild produces different bytes, so as far as macOS is concerned it
 # is a different application that happens to have the same name — and every
 # permission it was granted belongs to the old one. bengkel and gerak read
-# models out of ~/Desktop/project, ~/Documents and ~/Downloads, all three of
+# models out of ~/Desktop/projects, ~/Documents and ~/Downloads, all three of
 # which are behind macOS's privacy controls, so a rebuild meant three dialogs
 # all over again. This session alone rebuilt gerak three times.
 #

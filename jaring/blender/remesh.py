@@ -34,6 +34,7 @@ import sys
 import time
 
 import bpy
+from workshop import fresh_scene, save_blend                  # noqa: E402  common/blender, put on the path by bengkel
 import bmesh
 from mathutils import Vector
 
@@ -116,7 +117,7 @@ def extent(obj):
 # --------------------------------------------------------------------------
 
 def wipe():
-    bpy.ops.wm.read_factory_settings(use_empty=True)
+    fresh_scene()
 
 
 def load(path):
@@ -526,7 +527,7 @@ def run(job):
     # The .blend keeps all of them together, because that is the file you open
     # when you want to look at the levels side by side.
     blend = os.path.join(out, "%s.blend" % stem)
-    bpy.ops.wm.save_as_mainfile(filepath=blend)
+    save_blend(blend)
 
     return {
         "ok": True,

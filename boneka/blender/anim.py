@@ -544,7 +544,81 @@ def _prop(p, a, move):
 
 PROP = {name: (lambda m: (lambda p, a: _prop(p, a, m)))(name) for name in MOVES}
 
+# --------------------------------------------------------------------------
+# wings and a tail, on whatever skeleton carries them
+#
+# A dragon stands on the humanoid's skeleton or the dog's, with wing bones
+# (wing and wing_outer) and, standing up, a tail. Rather than a table of its
+# own it borrows theirs, and every move gets the wings added: a full flap to
+# fly, half of one to jump or cheer, and otherwise a slow rise and fall, as
+# if breathing. The outer bone lags the arm, so the wing whips rather than
+# swinging like a board. A model without these bones is not touched, because
+# bake() only keys the bones a model has.
+# --------------------------------------------------------------------------
+
+WING_BEAT = {"fly": 46.0, "jump": 30.0, "cheer": 30.0, "wave": 20.0,
+             "dance": 20.0, "attack": 24.0, "run": 12.0}
+
+
+def _wings(p, a, move):
+    amp = WING_BEAT.get(move, 5.0)
+    # a whole number of beats per loop, so the loop has no seam
+    beats = 2 if move in ("fly", "jump", "cheer", "attack") else 1
+    # the wings rest half raised, so the beat goes up by half and down by the
+    # whole: past vertical on the upstroke they would cross over the back
+    arm = D(amp * a) * (0.75 * _sin(p * beats) - 0.25)
+    tip = D(amp * 0.55 * a) * (0.75 * _sin(p * beats, -0.10) - 0.25)
+    # a turn about Y lifts the left wing when negative and the right when positive
+    return {"wing.L": [("Y", -arm)], "wing.R": [("Y", arm)],
+            "wing_outer.L": [("Y", -tip)], "wing_outer.R": [("Y", tip)]}
+
+
+def _winged(table, tail=False):
+    def wrap(move, poser):
+        def pose(p, a):
+            out = dict(poser(p, a) or {})
+            for bone_name, turns in _wings(p, a, move).items():
+                out.setdefault(bone_name, turns)
+            if tail:
+                for bone_name, turns in _q_tail(p, a, 12.0).items():
+                    out.setdefault(bone_name, turns)
+            return out
+        return pose
+    return {move: wrap(move, poser) for move, poser in table.items()}
+
+
+def _hover(p, a):
+    """An upright dragon flies standing up, as the concept sheet draws it:
+    body nearly level, legs hanging, arms tucked, bobbing on the beat. The
+    humanoid's own fly is a Superman dive, which folds a round belly in half."""
+    beat = _sin(p * 2)
+    return {"spine": [("X", D(-6))], "head": [("X", D(6))],
+            "thigh.L": [("X", D(22))], "thigh.R": [("X", D(22))],
+            "shin.L": [("X", D(-18))], "shin.R": [("X", D(-18))],
+            "foot.L": [("X", D(28))], "foot.R": [("X", D(28))],
+            "upperarm.L": [("X", D(-18))], "upperarm.R": [("X", D(-18))],
+            "_root": {"loc": (0, 0, 0.25 + 0.05 * a * beat)}}
+
+
+def _chubby(poser):
+    """Halve every bend through the spine and hips: a round body folded as far
+    as a slim one creases through itself."""
+    def pose(p, a):
+        out = dict(poser(p, a) or {})
+        for name in ("spine", "hips"):
+            if name in out:
+                out[name] = [(axis, turn * 0.5) for axis, turn in out[name]]
+        return out
+    return pose
+
+
+DRAGON = _winged({move: _chubby(poser) for move, poser in
+                  dict(HUMANOID, fly=_hover).items()}, tail=True)
+HUMANOID = _winged(HUMANOID)
+QUADRUPED = _winged(QUADRUPED)
+
 PROFILES = {"humanoid": HUMANOID, "quadruped": QUADRUPED, "bird": BIRD,
+            "dragon": DRAGON,
             "prop": PROP, "generic": PROP}
 
 BASE_FRAMES = {

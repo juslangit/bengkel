@@ -44,7 +44,7 @@ print(d if not isinstance(d, (list, dict)) else json.dumps(d))' "$1"; }
 
 # Something real to work on. Any rigged character will do; this one is the
 # smallest that is still a whole figure rather than a prop.
-MODEL="${JARING_TEST_MODEL:-$HOME/Desktop/project/game/The Forsaken/docs/character-revamp/models/paladin.glb}"
+MODEL="${JARING_TEST_MODEL:-$HOME/Desktop/projects/game/The Forsaken/docs/character-revamp/models/paladin.glb}"
 
 echo
 echo "── starting up ─────────────────────────────────────────────────"

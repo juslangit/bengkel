@@ -170,6 +170,10 @@ if [ $INSTALL -eq 1 ]; then
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
     -f "$DEST" 2>/dev/null || true
   say "installed to $DEST"
+  # A shortcut on the Desktop. It is a link to the path, not a copy, so every
+  # install above is what it opens; it is remade here in case it was deleted.
+  ln -sfn "$DEST" "$HOME/Desktop/bengkel"
+  say "shortcut on the Desktop"
   [ $RUN -eq 1 ] && open "$DEST" && say "opened it"
 fi
 

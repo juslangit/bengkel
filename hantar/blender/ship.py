@@ -27,13 +27,14 @@ import sys
 import time
 
 import bpy
+from workshop import fresh_scene                   # noqa: E402  common/blender, put on the path by bengkel
 from mathutils import Vector
 
 ANSWER = "@@JOB@@"
 
 
 def load(path):
-    bpy.ops.wm.read_factory_settings(use_empty=True)
+    fresh_scene()
     lower = path.lower()
     if lower.endswith((".glb", ".gltf")):
         bpy.ops.import_scene.gltf(filepath=path)

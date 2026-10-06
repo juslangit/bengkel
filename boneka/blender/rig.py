@@ -49,12 +49,49 @@ def tag_parts_with_bones(meshes, bones):
         if obj.type != "MESH" or not obj.data.vertices:
             continue
         bone_name = obj.get("bk_bone")
+        if bone_name == SKIN:
+            # weighted later, from the body underneath - see follow_the_skin
+            group = obj.vertex_groups.new(name=SKIN_GROUP)
+            group.add([v.index for v in obj.data.vertices], 1.0, "REPLACE")
+            continue
         if bone_name not in known:
             centre = obj.matrix_world @ (
                 sum((Vector(c) for c in obj.bound_box), Vector()) / 8.0)
             bone_name = _closest_bone(centre, bones)
         group = obj.vertex_groups.new(name=bone_name)
         group.add([v.index for v in obj.data.vertices], 1.0, "REPLACE")
+
+
+# A part attached to SKIN lies over the body rather than riding one bone - a
+# dragon's belly plate. Pinned rigid to a bone, a plate that spans two bones
+# stays straight while the body behind it bends, and the body pokes through.
+SKIN = "@skin"
+SKIN_GROUP = "__skin__"
+
+
+def follow_the_skin(body):
+    """Give every vertex of a SKIN part the weights of the nearest body vertex."""
+    from mathutils.kdtree import KDTree
+    skin = body.vertex_groups.get(SKIN_GROUP)
+    if skin is None:
+        return
+    on_skin, under = [], []
+    for v in body.data.vertices:
+        (on_skin if any(g.group == skin.index for g in v.groups) else under).append(v)
+    if not on_skin or not under:
+        body.vertex_groups.remove(skin)
+        return
+    tree = KDTree(len(under))
+    for i, v in enumerate(under):
+        tree.insert(v.co, i)
+    tree.balance()
+    groups = body.vertex_groups
+    for v in on_skin:
+        _, i, _ = tree.find(v.co)
+        for g in under[i].groups:
+            if g.group != skin.index and g.weight > 0:
+                groups[g.group].add([v.index], g.weight, "REPLACE")
+    groups.remove(skin)
 
 
 def bones_of(plan):
@@ -93,6 +130,7 @@ def rig_from_plan(plan, smooth_passes=6):
     # 3. rigid weights bend like wood, so soften them across the joints
     if smooth_passes:
         _smooth_weights(body, smooth_passes)
+    follow_the_skin(body)
 
     return arm_obj, body, [b["name"] for b in bones]
 

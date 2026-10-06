@@ -64,7 +64,7 @@ glance down beats twelve notes nobody reads.
 
 ## What it will not do
 
-**It only writes inside `~/Desktop/project/game/`.** A page asking for any
+**It only writes inside `~/Desktop/projects/game/`.** A page asking for any
 other path is refused, whatever it says. This is the one tool that can leave a
 mess somewhere that matters.
 

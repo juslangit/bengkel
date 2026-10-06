@@ -75,7 +75,8 @@ Godot and Unreal both read the first two.
 | Kind | What you say | What you get |
 |---|---|---|
 | People | knight, wizard, robot, ninja, farmer, zombie, orc, astronaut… | a full humanoid, 18 bones |
-| Four-legged animals | dog, cat, wolf, horse, dragon, bear… | body, head, four legs, a tail, 18+ bones |
+| Dragons | dragon, wyvern, dragonling | standing up and chubby, like the Keep It Crispy dragon: horns, belly plate, back spikes, claws, a long tail and bone-and-skin wings, 26 bones. Say *four-legged* or *on all fours* for the classic shape on a dog's skeleton, 24 bones |
+| Four-legged animals | dog, cat, wolf, horse, bear… | body, head, four legs, a tail, 18+ bones |
 | Birds | chicken, duck, owl, penguin, eagle… | body, wings, legs, tail |
 | Objects | 34 of them — tree, chair, sword, house, rocket, car, campfire, snowman… | the object, with a bone so it can still spin and bob |
 
@@ -85,14 +86,41 @@ any **colour** (the first colour paints the body, the second the trim), and
 **extras** — with a hat, with horns, with wings, with a tail, with a cape, with a
 backpack, with a sword, with a shield, with a staff, with an antenna.
 
-Nothing here is a neural network. It is a library of recipes written in real
-proportions, which is why a 1.8 m person really is 1.8 m tall and lands in Godot
-at the right scale.
+The built-in recipes are not a neural network. They are a library written in
+real proportions, which is why a 1.8 m person really is 1.8 m tall and lands in
+Godot at the right scale.
+
+**Anything else, Claude designs.** A prompt that names nothing above ("a snail",
+"a griffin", "a teapot") used to come out as a person, because a bare prompt
+makes a character. Now boneka hands it to Claude:
+
+1. It fetches up to three reference photos from Wikimedia.
+2. It runs the `claude` command already signed in on this Mac, which designs a
+   recipe: the same parts, colours and bones the built-in ones are made of.
+3. It checks that recipe (every shape, number, colour and bone) and asks once
+   for a fix if something is wrong.
+4. It builds it like any other model: sculpted, rigged from its own bones, and
+   animated. If the bones use a known skeleton's names, it gets that
+   skeleton's moves.
+
+This takes two to four minutes and uses your Claude plan, not money. Each recipe
+is kept as `design.json` in the session's `design_*` folder.
+
+Claude designs **data, never code**. A Blender script from a model, run by
+pressing a button, would be a program nobody read running with the run of the
+machine. A recipe is only numbers and names, checked before Blender sees them.
+Claude runs locked down, as bengkel's assistant does (`--restricted`, only
+`Read`, only its folder of photos, no MCP servers). See `blender/design.py`.
 
 ## Moves it knows
 
 idle · walk · run · sneak · jump · wave · cheer · dance · attack · punch · kick ·
 nod · shake · crouch · sit · die · fly · spin · bob
+
+Anything with wings flaps them as it moves: a full beat to *fly*, half a beat to
+jump or cheer, and a slow rise and fall otherwise. An upright dragon hovers
+rather than diving like Superman, and bends its round body half as far as a
+person would, because a belly folded that hard creases through itself.
 
 Say *slowly*, *fast* or *frantic* to change the speed; *subtle*, *big* or
 *exaggerated* to change how far it goes.

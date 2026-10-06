@@ -31,6 +31,7 @@ import sys
 import time
 
 import bpy
+from workshop import fresh_scene, save_blend                  # noqa: E402  common/blender, put on the path by bengkel
 
 ANSWER = "@@JOB@@"
 
@@ -132,7 +133,7 @@ def material_for(name, colour, made, scale):
 
 def load(path):
     lower = path.lower()
-    bpy.ops.wm.read_factory_settings(use_empty=True)
+    fresh_scene()
     if lower.endswith((".glb", ".gltf")):
         bpy.ops.import_scene.gltf(filepath=path)
     elif lower.endswith(".fbx"):
@@ -218,7 +219,7 @@ def run(job):
                               export_apply=False, export_image_format="JPEG")
 
     blend = os.path.join(out, "%s.blend" % stem)
-    bpy.ops.wm.save_as_mainfile(filepath=blend)
+    save_blend(blend)
 
     return {"ok": True, "glb": glb, "blend": blend,
             "dressed": dressed, "notes": notes,

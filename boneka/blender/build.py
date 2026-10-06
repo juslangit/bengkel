@@ -189,6 +189,8 @@ def make_part(st, style="round"):
         obj = _make_loft(st, style)
     elif shape == "limb":
         obj = _make_limb(st, style)
+    elif shape == "membrane":
+        obj = _make_membrane(st)
     elif shape in ("box", "capsule") or (style == "blocky" and shape in ("sphere",)):
         bpy.ops.mesh.primitive_cube_add(size=2, location=loc)
         obj = bpy.context.active_object
@@ -330,6 +332,31 @@ def _make_loft(st, style):
 def _apply_scale(obj):
     bpy.context.view_layer.objects.active = obj
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+
+
+def _make_membrane(st):
+    """
+    A thin skin stretched through a ring of points - a dragon's or a bat's
+    wing between its finger bones. The outline may be concave, which is the
+    whole point: the scallop between two fingers is what reads as a wing
+    rather than a fan. So the face is cut into triangles by ear clipping
+    before it is given its thickness, never fanned from one corner.
+    """
+    import bmesh
+    d = st["detail"]
+    bm = bmesh.new()
+    verts = [bm.verts.new(Vector(p)) for p in d["points"]]
+    face = bm.faces.new(verts)
+    bmesh.ops.triangulate(bm, faces=[face], quad_method="BEAUTY",
+                          ngon_method="EAR_CLIP")
+    bmesh.ops.solidify(bm, geom=list(bm.faces), thickness=float(d.get("thickness", 0.01)))
+    bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+    mesh = bpy.data.meshes.new(st["part"])
+    bm.to_mesh(mesh)
+    bm.free()
+    obj = bpy.data.objects.new(st["part"], mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    return _finish(obj, st, False)
 
 
 def _make_limb(st, style):

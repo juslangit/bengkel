@@ -38,6 +38,7 @@ COLORS = {
 
 # archetype -> the words that pick it
 ARCHETYPES = {
+    "dragon": ["dragon", "dragons", "dragonling", "wyvern"],
     "humanoid": [
         "human", "person", "people", "man", "woman", "boy", "girl", "guy",
         "character", "figure", "hero", "villain", "knight", "warrior", "soldier",
@@ -49,7 +50,7 @@ ARCHETYPES = {
     "quadruped": [
         "dog", "cat", "wolf", "fox", "horse", "cow", "bull", "goat", "sheep",
         "pig", "deer", "lion", "tiger", "bear", "rat", "mouse", "elephant",
-        "dinosaur", "dragon", "lizard", "creature", "beast", "animal", "quadruped",
+        "dinosaur", "lizard", "creature", "beast", "animal", "quadruped",
         "puppy", "kitten", "pony", "donkey", "camel",
     ],
     "bird": [
@@ -210,7 +211,8 @@ ACCESSORIES = (
     "eye", "nose", "beak", "comb", "wattle", "horn", "antenna", "antenna_tip",
     "hat", "hat_brim", "crown", "helmet", "beard", "sword", "staff", "shield",
     "cape", "backpack", "spot", "band", "rail", "window", "door", "lock",
-    "gem", "frond", "stripe", "boss", "rim", "tooth",
+    "gem", "frond", "stripe", "boss", "rim", "tooth", "spike", "claw",
+    "membrane", "knuckle", "nostril",
 )
 
 
@@ -384,7 +386,11 @@ def plan_from_prompt(prompt, palette=None):
 
     extras = _find_all(words, EXTRAS)
 
-    if archetype == "humanoid":
+    if archetype == "dragon":
+        text = (prompt or "").lower()
+        planner = (build_dragon_on_all_fours if any(k in text for k in FOUR_LEGGED)
+                   else build_dragon)
+    elif archetype == "humanoid":
         planner = build_humanoid
     elif archetype == "quadruped":
         planner = build_quadruped
@@ -396,6 +402,18 @@ def plan_from_prompt(prompt, palette=None):
     steps, meta = planner(words=words, scale=scale, bulk=bulk, style=style,
                           extras=extras)
 
+    return _assemble(prompt, words, steps, meta, archetype, prop, style, scale,
+                     bulk, extras, palette)
+
+
+def _assemble(prompt, words, steps, meta, archetype, prop, style, scale, bulk,
+              extras, palette):
+    """
+    Everything a plan needs once its parts exist: what each part is made of,
+    which parts the sculpt pass may fuse, the palette, and the build stages.
+    Shared by the recipes here and by recipes Claude designs (design.py), so
+    a designed model is finished exactly the way a built-in one is.
+    """
     final_style = style or meta.get("style", "round")
     # a blocky model is blocky on purpose, so it is never sculpted
     organic = bool(meta.get("organic")) and final_style != "blocky"
@@ -1008,7 +1026,7 @@ def humanoid_hands(extras, H, pal):
 # quadruped
 # --------------------------------------------------------------------------
 
-def build_quadruped(words, scale, bulk, style, extras):
+def build_quadruped(words, scale, bulk, style, extras, dragon=False):
     """
     A dog is longer than it is tall - breed standards put body length against
     shoulder height at about 10 to 8.5 for a German Shepherd and 10 to 9 for a
@@ -1024,15 +1042,18 @@ def build_quadruped(words, scale, bulk, style, extras):
     Hs = 0.62 * scale                      # height at the shoulder
     L = 1.17 * Hs                          # chest to rump
     style = style or "round"
-    pal = pick_colors(words, "#8c6239", "#4a3524")
+    pal = dragon_colours(words) if dragon else pick_colors(words, "#8c6239", "#4a3524")
     body, accent, dark = pal["body"], pal["accent"], pal["dark"]
     B = bulk
 
     y_front, y_rear = -0.46 * L, 0.46 * L
-    x_leg = 0.092 * L * (0.62 + 0.38 * B)   # under the body, not outboard
+    # a dragon is built heavier than a dog: deeper through the body, legs half
+    # as thick again, a broader snout. G is the legs, K the body and head.
+    G, K = (1.55, 1.15) if dragon else (1.0, 1.0)
+    x_leg = 0.092 * L * (0.62 + 0.38 * B) * (1.2 if dragon else 1.0)
 
     def R(y, z, rx, rz):
-        return ring(0, y * L, z * Hs, rx * L * B, rz * Hs * B)
+        return ring(0, y * L, z * Hs, rx * L * B * K, rz * Hs * B * K)
 
     spine = [
         R(-0.50, 0.760, 0.085, 0.200),     # front of the chest
@@ -1051,9 +1072,10 @@ def build_quadruped(words, scale, bulk, style, extras):
                   "hindquarters"))
 
     # ---- neck and head: short and thick, head about a third of the body
-    head_l = 0.32 * L
-    y_head = y_front - 0.22 * L
-    z_head = 0.95 * Hs
+    # a dragon carries its head higher, on a longer neck, with a longer snout
+    head_l = (0.36 if dragon else 0.32) * L
+    y_head = y_front - (0.34 if dragon else 0.22) * L
+    z_head = (1.18 if dragon else 0.95) * Hs
     S.append(loft("neck", [
         ring(0, y_front * 0.90, 0.80 * Hs, 0.105 * L * B, 0.115 * L * B),
         ring(0, y_front - 0.10 * L, 0.88 * Hs, 0.092 * L * B, 0.098 * L * B),
@@ -1061,23 +1083,29 @@ def build_quadruped(words, scale, bulk, style, extras):
     ], body, bone("neck", [0, y_front, 0.78 * Hs],
                   [0, y_head + 0.07 * L, z_head], "spine"), "neck"))
 
-    muzzle_l = 0.45 * head_l               # muzzle 4.5 to the skull's 5.5
+    muzzle_l = (0.62 if dragon else 0.45) * head_l   # a dog's is 4.5 to the skull's 5.5
     S.append(loft("head", [
-        ring(0, y_head + 0.10 * L, z_head - 0.01 * Hs, 0.088 * L, 0.090 * L),
-        ring(0, y_head + 0.02 * L, z_head + 0.01 * Hs, 0.098 * L, 0.100 * L),
-        ring(0, y_head - 0.06 * L, z_head - 0.02 * Hs, 0.078 * L, 0.078 * L),
+        ring(0, y_head + 0.10 * L, z_head - 0.01 * Hs, 0.088 * L * K,
+             0.090 * L * K),
+        ring(0, y_head + 0.02 * L, z_head + 0.01 * Hs, 0.098 * L * K,
+             0.100 * L * K),
+        ring(0, y_head - 0.06 * L, z_head - 0.02 * Hs, 0.078 * L * K, 0.078 * L * K),
         ring(0, y_head - 0.06 * L - muzzle_l * 0.40, z_head - 0.055 * Hs,
-             0.048 * L, 0.046 * L),
+             0.048 * L * K, 0.046 * L * K),
         ring(0, y_head - 0.06 * L - muzzle_l * 0.98, z_head - 0.070 * Hs,
-             0.041 * L, 0.039 * L),
+             0.041 * L * K, 0.039 * L * K),
     ], body, bone("head", [0, y_head + 0.07 * L, z_head],
                   [0, y_head - 0.16 * L, z_head - 0.05 * Hs], "neck"), "head"))
 
     nose_y = y_head - 0.06 * L - muzzle_l * 1.05
-    S.append(step("nose", "sphere", [0.021 * L, 0.019 * L, 0.019 * L],
-                  [0, nose_y, z_head - 0.072 * Hs], "#2b2b2b", attach="head",
-                  label="nose"))
-    for side, sx in (("L", 1.0), ("R", -1.0)):
+    # a dragon gets nostrils, bigger eyes and horns instead of a nose and ears
+    if dragon:
+        S += _dragon_head_on_all_fours(pal, L, Hs, y_head, z_head, nose_y)
+    else:
+        S.append(step("nose", "sphere", [0.021 * L, 0.019 * L, 0.019 * L],
+                      [0, nose_y, z_head - 0.072 * Hs], "#2b2b2b", attach="head",
+                      label="nose"))
+    for side, sx in (() if dragon else (("L", 1.0), ("R", -1.0))):
         S.append(step("eye.%s" % side, "sphere", [0.017 * L] * 3,
                       [0.058 * L * sx, y_head - 0.040 * L, z_head + 0.015 * Hs],
                       "#17202a", attach="head", label="eye"))
@@ -1107,7 +1135,7 @@ def build_quadruped(words, scale, bulk, style, extras):
             # carries the leg into the body. Without it the leg pops out of
             # the flank as a tube with a crease round it.
             S.append(step("%s_mass.%s" % (tag, side), "sphere",
-                          [(0.052 if front else 0.066) * L * B,
+                          [(0.052 if front else 0.066) * L * B * G,
                            (0.115 if front else 0.140) * L,
                            (0.165 if front else 0.195) * Hs],
                           [x * 0.72, y_top + (0.01 if front else -0.02) * L,
@@ -1119,39 +1147,62 @@ def build_quadruped(words, scale, bulk, style, extras):
             # shoulder or haunch mass is what shows there, and a wide ring
             # here punches a plate out through the flank
             S.append(loft("%sleg_upper.%s" % (tag, side), [
-                ring(x, y_top, z_top + 0.04 * Hs, 0.046 * L * B, 0.054 * L * B),
+                ring(x, y_top, z_top + 0.04 * Hs, (0.046 * L * B) * G, (0.054 * L * B) * G),
                 ring(x, (y_top + y_mid) / 2, (z_top + z_mid) / 2,
                      0.050 * L * B, 0.057 * L * B),
-                ring(x, y_mid, z_mid, 0.036 * L * B, 0.040 * L * B),
+                ring(x, y_mid, z_mid, (0.036 * L * B) * G, (0.040 * L * B) * G),
             ], body, bone(b1, [x, y_top, z_top], [x, y_mid, z_mid], parent),
                 "%s leg upper" % tag))
             S.append(loft("%sleg_lower.%s" % (tag, side), [
-                ring(x, y_mid, z_mid + 0.03 * Hs, 0.038 * L * B, 0.044 * L * B),
+                ring(x, y_mid, z_mid + 0.03 * Hs, (0.038 * L * B) * G, (0.044 * L * B) * G),
                 ring(x, (y_mid + y_low) / 2, (z_mid + z_low) / 2 + 0.04 * Hs,
                      0.033 * L * B, 0.040 * L * B),   # the calf, carried high
-                ring(x, y_low + 0.01 * L, 0.20 * Hs, 0.023 * L, 0.025 * L),
-                ring(x, y_low, z_low, 0.021 * L, 0.023 * L),
+                ring(x, y_low + 0.01 * L, 0.20 * Hs, (0.023 * L) * G, (0.025 * L) * G),
+                ring(x, y_low, z_low, (0.021 * L) * G, (0.023 * L) * G),
             ], body, bone(b2, [x, y_mid, z_mid], [x, y_low, z_low], b1),
                 "%s leg lower" % tag))
             S.append(loft("paw_%s.%s" % (tag, side), [
-                ring(x, y_low + 0.024 * L, 0.052 * Hs, 0.023 * L, 0.040 * Hs),
-                ring(x, y_low - 0.022 * L, 0.034 * Hs, 0.030 * L, 0.030 * Hs),
-                ring(x, y_low - 0.052 * L, 0.016 * Hs, 0.024 * L, 0.015 * Hs),
+                ring(x, y_low + 0.024 * L, 0.052 * Hs, (0.023 * L) * G, 0.040 * Hs),
+                ring(x, y_low - 0.022 * L, 0.034 * Hs, (0.030 * L) * G, 0.030 * Hs),
+                ring(x, y_low - 0.052 * L, 0.016 * Hs, (0.024 * L) * G, 0.015 * Hs),
             ], dark, bone("paw_%s.%s" % (tag, side), [x, y_low, z_low],
                           [x, y_low - 0.055 * L, 0.02 * Hs], b2),
                 "%s paw" % tag))
+            if dragon:
+                for i, dx in enumerate((-0.018, 0.0, 0.018)):
+                    S.append(claw("claw_%s_%d.%s" % (tag, i + 1, side),
+                                  [x + dx * L, y_low - 0.060 * L, 0.018 * Hs],
+                                  0.030 * L, pal["cream"], "paw_%s.%s" % (tag, side),
+                                  pitch=1.75))
 
-    # ---- tail, carried back and a little down, tapering to a point
+    # ---- tail, carried back and a little down, tapering to a point. A
+    # dragon's is two and a half times as long, thick at the root, and nearly
+    # as long again as the body
+    seg, drop, root = (0.21, 0.050, 0.080) if dragon else (0.085, 0.085, 0.040)
     prev = "hips"
     for i in range(4):
         t = i / 3.0
-        h = [0, y_rear + 0.085 * L * i, (0.82 - 0.085 * i) * Hs]
-        tl = [0, y_rear + 0.085 * L * (i + 1), (0.82 - 0.085 * (i + 1)) * Hs]
+        h = [0, y_rear + seg * L * i, (0.82 - drop * i) * Hs]
+        tl = [0, y_rear + seg * L * (i + 1), (0.82 - drop * (i + 1)) * Hs]
         nm = "tail_%02d" % i
-        S.append(limb(nm, h, tl, 0.040 * L * (1 - 0.62 * t),
-                      0.040 * L * (1 - 0.62 * (t + 0.33)), body,
+        r0 = root * L * (1 - 0.62 * t) * (B if dragon else 1)
+        r1 = root * L * (1 - 0.62 * (t + 0.33)) * (B if dragon else 1)
+        if dragon and i == 3:
+            r1 = 0.006 * L
+        S.append(limb(nm, h, tl, r0, r1, body,
                       bone(nm, h, tl, prev), "tail %d" % (i + 1)))
         prev = nm
+        if dragon:
+            top = _mid(h, tl)
+            top[2] += (r0 + r1) * 0.5 * 0.8
+            S.append(spike("spike_tail_%d" % (i + 1), top, 0.10 * L * (1 - 0.2 * i),
+                           0.06 * L * (1 - 0.2 * i), 0.9, pal["cream"], nm))
+
+    if dragon:
+        S += _dragon_body_on_all_fours(pal, L, Hs, B, spine, y_front, y_head,
+                                       z_head)
+        return S, {"rig_profile": "quadruped", "height": z_head + 0.30 * Hs,
+                   "style": style, "organic": True, "subject": "dragon"}
 
     if "horns" in extras:
         for side, sx in (("L", 1.0), ("R", -1.0)):
@@ -1170,6 +1221,352 @@ def build_quadruped(words, scale, bulk, style, extras):
     return S, {"rig_profile": "quadruped", "height": z_head + 0.20 * Hs,
                "style": style, "organic": True,
                "subject": _subject(words, ARCHETYPES["quadruped"], "dog")}
+
+
+# --------------------------------------------------------------------------
+# dragon
+#
+# A dragon is not a dog with wings on. What makes one read as a dragon, going
+# by the concept sheet Keep It Crispy was modelled from
+# (game/dragon-raid/art/concept/dragon-sheet.png), is a short list: a cream
+# belly plate, horns sweeping back off the skull, a row of spikes from the
+# head to the end of the tail, claws, a long tail, and wings made of bone and
+# skin - an arm, a knuckle, fingers fanning out, and scalloped membrane
+# stretched between them. Every one of those is here.
+#
+# Two shapes. By default it stands up, chubby, like the sheet, on the
+# humanoid's skeleton plus a tail and wings - so it waves, dances, cheers and
+# attacks with the humanoid's moves (anim.DRAGON, which hovers instead of
+# diving and bends a round body less). "four-legged" or "on all fours" puts the
+# same parts on the dog's skeleton instead, and it walks, runs and sits.
+# Both flap when told to fly.
+# --------------------------------------------------------------------------
+
+FOUR_LEGGED = ("four-legged", "four legged", "fourlegged", "on all fours",
+               "quadruped")
+DRAGON_GREEN = "#3fa46a"           # the colours off the Keep It Crispy sheet
+DRAGON_WING = "#f28c3a"
+DRAGON_CREAM = "#f3e2b8"
+
+
+def dragon_colours(words):
+    pal = pick_colors(words, DRAGON_GREEN, DRAGON_WING)
+    named = [w for w in words if w in COLORS]
+    if len(named) == 1:
+        # one colour named paints the scales; the wings go a lighter shade of
+        # it, since an orange membrane is only right on a green dragon
+        pal["accent"] = pal["light"]
+    pal["cream"] = DRAGON_CREAM
+    pal["arm"] = _shade(pal["body"], 0.78)
+    return pal
+
+
+def _mid(a, b):
+    return [(a[i] + b[i]) / 2.0 for i in range(3)]
+
+
+def _towards(a, b, t):
+    return [a[i] + (b[i] - a[i]) * t for i in range(3)]
+
+
+def dragon_wing(side, shoulder, elbow, knuckle, fingers, root, pal, parent, r):
+    """
+    One wing, as a bat's or a dragon's is built: an arm from the shoulder to
+    the elbow, a hand from the elbow to the knuckle at the top, and fingers
+    fanning down from the knuckle. Skin is stretched between each pair of
+    fingers and between the last finger and the body, and each span is cut
+    in towards the knuckle between its fingers - the scallop that makes the
+    outline a wing rather than a fan.
+
+    Two bones: `wing` swings from the shoulder and `wing_outer` from the
+    elbow, so a flap can lead with the arm and let the hand follow.
+    """
+    arm, outer = "wing.%s" % side, "wing_outer.%s" % side
+    S = [
+        limb("wing_arm.%s" % side, shoulder, elbow, r, r * 0.78, pal["arm"],
+             bone(arm, shoulder, elbow, parent), "wing arm", hard=True),
+        limb("wing_hand.%s" % side, elbow, knuckle, r * 0.78, r * 0.55, pal["arm"],
+             bone(outer, elbow, knuckle, arm), "wing hand", hard=True),
+        step("wing_knuckle.%s" % side, "sphere", [r * 1.05] * 3, knuckle,
+             pal["cream"], attach=outer, label="wing knuckle", hard=True),
+    ]
+    for i, tip in enumerate(fingers):
+        S.append(limb("wing_finger_%d.%s" % (i + 1, side), knuckle, tip,
+                      r * 0.45, r * 0.18, pal["arm"], attach=outer,
+                      label="wing finger", hard=True))
+
+    def scallop(a, b):
+        return _towards(_mid(a, b), knuckle, 0.22)
+
+    thick = r * 0.30
+    # the outer spans ride the hand; the inner one, back to the body, the arm
+    for i in range(len(fingers) - 1):
+        a, b = fingers[i], fingers[i + 1]
+        S.append(membrane("wing_membrane_%d.%s" % (i + 1, side),
+                          [knuckle, a, scallop(a, b), b], pal["accent"],
+                          thick, attach=outer, label="wing skin"))
+    last = fingers[-1]
+    S.append(membrane("wing_membrane_%d.%s" % (len(fingers), side),
+                      [shoulder, elbow, knuckle, last,
+                       _towards(_mid(last, root), shoulder, 0.18), root],
+                      pal["accent"], thick, attach=arm, label="wing skin"))
+    return S
+
+
+def membrane(part, points, color, thickness, attach=None, label=None):
+    lo = [min(p[i] for p in points) for i in range(3)]
+    hi = [max(p[i] for p in points) for i in range(3)]
+    return step(part, "membrane", [(hi[i] - lo[i]) / 2.0 for i in range(3)],
+                _mid(lo, hi), color, attach=attach, label=label, hard=True,
+                detail={"points": [[round(v, 5) for v in p] for p in points],
+                        "thickness": round(thickness, 5)})
+
+
+def spike(part, base, length, width, lean_back, color, attach, label="spike"):
+    """
+    A back spike: a cone flattened side to side, so it is a fin with an edge
+    rather than a thorn. `lean_back` tips it from straight up (0) towards the
+    tail (pi/2) - the model faces -Y, so a turn about X by minus that angle
+    carries the point back.
+    """
+    import math
+    up = [base[0], base[1] + math.sin(lean_back) * length * 0.5,
+          base[2] + math.cos(lean_back) * length * 0.5]
+    return step(part, "cone", [width * 0.35, width, length * 0.5], up, color,
+                rot=(-lean_back, 0, 0), attach=attach, label=label, hard=True)
+
+
+def claw(part, at, length, color, attach, pitch=1.95):
+    """A small cone pointing forward and down (pitch about X from straight up)."""
+    return step(part, "cone", [length * 0.32, length * 0.32, length * 0.5], at,
+                color, rot=(pitch, 0, 0), attach=attach, label="claw", hard=True)
+
+
+def build_dragon(words, scale, bulk, style, extras):
+    """
+    Standing up, chubby, the way the Keep It Crispy concept sheet draws it:
+    a pear of a body, widest low down, on short thick legs; a big round skull
+    with a snout; small arms held in front of the belly; the tail sweeping
+    out behind and round to one side. Sizes are read off the sheet in
+    fractions of its height.
+    """
+    H = 1.5 * scale
+    style = style or "round"
+    pal = dragon_colours(words)
+    body, cream = pal["body"], pal["cream"]
+    B = bulk
+
+    def P(x, y, z):
+        return [x * H, y * H, z * H]
+
+    def T(z, rx, ry, y=0.0, x=0.0):
+        return ring(x * H, y * H, z * H, rx * H * B, ry * H * B)
+
+    S = []
+    # ---- body: one stack, split where the pelvis bone meets the spine
+    torso = [(0.150, 0.110, 0.100, 0.000), (0.215, 0.185, 0.160, -0.008),
+             (0.300, 0.215, 0.185, -0.018), (0.395, 0.200, 0.172, -0.016),
+             (0.480, 0.168, 0.148, -0.008), (0.560, 0.135, 0.122, 0.000),
+             (0.625, 0.100, 0.100, 0.006)]
+    rings = [T(z, rx, ry, y) for z, rx, ry, y in torso]
+    S.append(loft("hips", rings[0:4], body,
+                  bone("hips", P(0, 0, 0.22), P(0, 0, 0.40)), "hips"))
+    S.append(loft("chest", rings[2:7], body,
+                  bone("spine", P(0, 0, 0.40), P(0, 0, 0.60), "hips"), "chest"))
+
+    # the belly plate sits proud of the front of the body, cream
+    plate = [T(z, rx * 0.70, ry * 0.50, y - ry * 0.70) for z, rx, ry, y in torso[1:6]]
+    S.append(loft("belly", plate, cream, attach="@skin", label="belly"))
+
+    # ---- neck and head
+    S.append(loft("neck", [T(0.600, 0.105, 0.100, 0.004), T(0.655, 0.095, 0.092, -0.004),
+                           T(0.700, 0.090, 0.088, -0.012)], body,
+                  bone("neck", P(0, 0, 0.60), P(0, 0, 0.70), "spine"), "neck"))
+
+    def HR(y, z, rx, ry):
+        return ring(0, y * H, z * H, rx * H, ry * H)
+
+    S.append(loft("head", [HR(+0.085, 0.795, 0.080, 0.085), HR(+0.040, 0.805, 0.118, 0.118),
+                           HR(-0.030, 0.800, 0.118, 0.108), HR(-0.095, 0.775, 0.092, 0.075),
+                           HR(-0.160, 0.768, 0.080, 0.062), HR(-0.205, 0.770, 0.056, 0.046)],
+                  body, bone("head", P(0, 0, 0.70), P(0, 0, 0.93), "neck"), "head"))
+    S.append(loft("jaw", [HR(0.000, 0.728, 0.085, 0.045), HR(-0.090, 0.716, 0.070, 0.036),
+                          HR(-0.175, 0.726, 0.050, 0.026)], cream, attach="head",
+                  label="jaw"))
+    for side, sx in (("L", 1.0), ("R", -1.0)):
+        S.append(step("nostril.%s" % side, "sphere", [0.012 * H] * 3,
+                      P(0.028 * sx, -0.212, 0.795), _shade(body, 0.4),
+                      attach="head", label="nostril"))
+        S.append(step("eye_white.%s" % side, "sphere",
+                      [0.040 * H, 0.030 * H, 0.046 * H], P(0.058 * sx, -0.085, 0.845),
+                      "#fbfbf8", attach="head", label="eye"))
+        S.append(step("eye_pupil.%s" % side, "sphere",
+                      [0.022 * H, 0.014 * H, 0.027 * H], P(0.061 * sx, -0.112, 0.848),
+                      "#1c1719", attach="head", label="eye"))
+        S.append(limb("brow.%s" % side, P(0.030 * sx, -0.080, 0.886),
+                      P(0.092 * sx, -0.066, 0.878), 0.018 * H, 0.014 * H, body,
+                      attach="head", label="brow"))
+        S.append(loft("horn.%s" % side, [
+            ring(0.058 * H * sx, 0.035 * H, 0.895 * H, 0.034 * H),
+            ring(0.074 * H * sx, 0.085 * H, 0.975 * H, 0.022 * H),
+            ring(0.080 * H * sx, 0.140 * H, 1.020 * H, 0.005 * H),
+        ], cream, attach="head", label="horn"))
+
+    # ---- arms, small, held out in front of the belly. The hands are kept
+    # clear of the body on purpose: a hand that touches the belly is fused
+    # into it by the sculpt pass, and then lifting the arm tears the belly.
+    for side, sx in (("L", 1.0), ("R", -1.0)):
+        t = lambda n: "%s.%s" % (n, side)
+        S.append(step(t("shoulder_mass"), "sphere", [0.055 * H * B, 0.055 * H, 0.060 * H],
+                      P(0.135 * sx, -0.010, 0.540), body,
+                      bone=bone(t("shoulder"), P(0.08 * sx, 0, 0.56),
+                                P(0.14 * sx, -0.01, 0.55), "spine"),
+                      label="shoulder"))
+        S.append(loft(t("upperarm"), [T(0.550, 0.046, 0.046, -0.010, 0.140 * sx),
+                                      T(0.495, 0.043, 0.043, -0.040, 0.195 * sx),
+                                      T(0.445, 0.035, 0.035, -0.070, 0.235 * sx)], body,
+                      bone(t("upperarm"), P(0.14 * sx, -0.01, 0.55),
+                           P(0.235 * sx, -0.07, 0.445), t("shoulder")), "upper arm"))
+        S.append(loft(t("forearm"), [T(0.445, 0.036, 0.036, -0.070, 0.235 * sx),
+                                     T(0.420, 0.033, 0.033, -0.120, 0.225 * sx),
+                                     T(0.400, 0.027, 0.027, -0.170, 0.212 * sx)], body,
+                      bone(t("forearm"), P(0.235 * sx, -0.07, 0.445),
+                           P(0.212 * sx, -0.17, 0.40), t("upperarm")), "forearm"))
+        S.append(loft(t("hand"), [T(0.400, 0.029, 0.029, -0.170, 0.212 * sx),
+                                  T(0.392, 0.032, 0.029, -0.200, 0.205 * sx),
+                                  T(0.386, 0.019, 0.017, -0.225, 0.200 * sx)], body,
+                      bone(t("hand"), P(0.212 * sx, -0.17, 0.40),
+                           P(0.200 * sx, -0.225, 0.386), t("forearm")), "hand"))
+        for i, dx in enumerate((-0.020, 0.0, 0.020)):
+            S.append(claw("claw_hand_%d.%s" % (i + 1, side),
+                          P((0.200 + dx) * sx, -0.236, 0.378), 0.026 * H, cream, t("hand")))
+
+    # ---- legs: short, thick, feet turned slightly out
+    for side, sx in (("L", 1.0), ("R", -1.0)):
+        t = lambda n: "%s.%s" % (n, side)
+        S.append(loft(t("thigh"), [T(0.27, 0.105, 0.105, 0.000, 0.110 * sx),
+                                   T(0.19, 0.100, 0.100, -0.010, 0.125 * sx),
+                                   T(0.14, 0.075, 0.075, -0.020, 0.130 * sx)], body,
+                      bone(t("thigh"), P(0.11 * sx, 0, 0.24), P(0.13 * sx, -0.02, 0.14),
+                           "hips"), "thigh"))
+        S.append(loft(t("shin"), [T(0.150, 0.070, 0.070, -0.020, 0.130 * sx),
+                                  T(0.090, 0.062, 0.062, -0.005, 0.135 * sx),
+                                  T(0.050, 0.055, 0.055, 0.000, 0.135 * sx)], body,
+                      bone(t("shin"), P(0.13 * sx, -0.02, 0.14), P(0.135 * sx, 0, 0.05),
+                           t("thigh")), "shin"))
+        S.append(loft(t("foot"), [
+            ring(0.135 * H * sx, +0.030 * H, 0.045 * H, 0.060 * H, 0.045 * H),
+            ring(0.138 * H * sx, -0.040 * H, 0.035 * H, 0.070 * H, 0.036 * H),
+            ring(0.142 * H * sx, -0.100 * H, 0.026 * H, 0.060 * H, 0.025 * H),
+        ], body, bone(t("foot"), P(0.135 * sx, 0, 0.05), P(0.14 * sx, -0.11, 0.03),
+                      t("shin")), "foot"))
+        for i, dx in enumerate((-0.035, 0.0, 0.035)):
+            S.append(claw("claw_foot_%d.%s" % (i + 1, side),
+                          P((0.142 + dx) * sx, -0.128, 0.020), 0.032 * H, cream,
+                          t("foot"), pitch=1.75))
+
+    # ---- tail: back and down from the rump, then curling round to one side
+    path = [P(0, 0.15, 0.22), P(0, 0.33, 0.13), P(0.02, 0.50, 0.09),
+            P(0.08, 0.64, 0.10), P(0.17, 0.74, 0.15)]
+    radii = [0.100, 0.074, 0.050, 0.030, 0.008]
+    prev = "hips"
+    for i in range(4):
+        nm = "tail_%02d" % i
+        S.append(limb(nm, path[i], path[i + 1], radii[i] * H * B, radii[i + 1] * H * B,
+                      body, bone(nm, path[i], path[i + 1], prev), "tail %d" % (i + 1)))
+        prev = nm
+        top = _mid(path[i], path[i + 1])
+        top[2] += (radii[i] + radii[i + 1]) * 0.5 * H * B * 0.8
+        S.append(spike("spike_tail_%d" % (i + 1), top, 0.075 * H * (1 - 0.18 * i),
+                       0.045 * H * (1 - 0.18 * i), 0.55, cream, nm))
+
+    # ---- spikes down the back, from the crown to the tail
+    for i, (y, z, size, attach) in enumerate([
+            (0.030, 0.915, 0.050, "head"), (0.150, 0.855, 0.045, "head"),
+            (0.095, 0.655, 0.050, "neck"), (0.115, 0.585, 0.060, "spine"),
+            (0.135, 0.500, 0.065, "spine"), (0.150, 0.415, 0.065, "spine"),
+            (0.160, 0.330, 0.060, "hips")]):
+        lean = 0.35 if attach == "head" and i == 0 else 1.05
+        S.append(spike("spike_back_%d" % (i + 1), P(0, y, z), size * H, size * 0.62 * H,
+                       lean, cream, attach))
+
+    # ---- wings, from the top of the back, up and out
+    for side, sx in (("L", 1.0), ("R", -1.0)):
+        S += dragon_wing(side, P(0.07 * sx, 0.12, 0.56), P(0.22 * sx, 0.20, 0.72),
+                         P(0.33 * sx, 0.22, 0.93),
+                         [P(0.62 * sx, 0.26, 0.70), P(0.52 * sx, 0.26, 0.50),
+                          P(0.34 * sx, 0.22, 0.40)],
+                         P(0.09 * sx, 0.14, 0.42), pal, "spine", 0.026 * H)
+
+    # its own moves: the humanoid's, with a hover for a flight and gentler
+    # bends through a round body (anim.DRAGON)
+    return S, {"rig_profile": "dragon", "height": 1.02 * H, "style": style,
+               "organic": True, "subject": "dragon"}
+
+
+def build_dragon_on_all_fours(words, scale, bulk, style, extras):
+    return build_quadruped(words, scale, bulk, style, extras, dragon=True)
+
+
+def _dragon_head_on_all_fours(pal, L, Hs, y_head, z_head, nose_y):
+    """What goes on a four-legged dragon's head in place of a dog's nose and ears."""
+    body, cream = pal["body"], pal["cream"]
+    S = [loft("jaw", [ring(0, y_head, z_head - 0.090 * Hs, 0.070 * L, 0.035 * L),
+                      ring(0, y_head - 0.10 * L, z_head - 0.100 * Hs, 0.055 * L, 0.028 * L),
+                      ring(0, nose_y + 0.03 * L, z_head - 0.095 * Hs, 0.035 * L, 0.018 * L)],
+              cream, attach="head", label="jaw"),
+         spike("spike_crown", [0, y_head + 0.06 * L, z_head + 0.085 * L], 0.07 * L,
+               0.045 * L, 0.6, cream, "head")]
+    for side, sx in (("L", 1.0), ("R", -1.0)):
+        S += [
+            step("nostril.%s" % side, "sphere", [0.012 * L] * 3,
+                 [0.020 * L * sx, nose_y + 0.012 * L, z_head - 0.045 * Hs],
+                 _shade(body, 0.4), attach="head", label="nostril"),
+            step("eye_white.%s" % side, "sphere", [0.034 * L, 0.026 * L, 0.038 * L],
+                 [0.090 * L * sx, y_head - 0.030 * L, z_head + 0.030 * Hs],
+                 "#fbfbf8", attach="head", label="eye"),
+            step("eye_pupil.%s" % side, "sphere", [0.018 * L, 0.012 * L, 0.021 * L],
+                 [0.100 * L * sx, y_head - 0.052 * L, z_head + 0.032 * Hs],
+                 "#1c1719", attach="head", label="eye"),
+            limb("brow.%s" % side, [0.030 * L * sx, y_head - 0.045 * L, z_head + 0.075 * Hs],
+                 [0.085 * L * sx, y_head - 0.020 * L, z_head + 0.070 * Hs],
+                 0.014 * L, 0.011 * L, body, attach="head", label="brow"),
+            loft("horn.%s" % side, [
+                ring(0.050 * L * sx, y_head + 0.05 * L, z_head + 0.08 * Hs, 0.026 * L),
+                ring(0.070 * L * sx, y_head + 0.12 * L, z_head + 0.17 * Hs, 0.016 * L),
+                ring(0.080 * L * sx, y_head + 0.20 * L, z_head + 0.22 * Hs, 0.004 * L),
+            ], cream, attach="head", label="horn"),
+        ]
+    return S
+
+
+def _dragon_body_on_all_fours(pal, L, Hs, B, spine, y_front, y_head, z_head):
+    """The belly plate, the spikes down the back and the wings."""
+    cream = pal["cream"]
+    plate = [ring(0, r["c"][1], r["c"][2] - r["ry"] * 0.66, r["rx"] * 0.72, r["ry"] * 0.5)
+             for r in spine]
+    S = [loft("belly", plate[0:5], cream, attach="@skin", label="belly")]
+
+    for i, r in enumerate(spine):
+        S.append(spike("spike_back_%d" % (i + 1),
+                       [0, r["c"][1], r["c"][2] + r["ry"] * 0.9], 0.085 * L,
+                       0.055 * L, 1.0, cream, "spine" if r["c"][1] < 0 else "hips"))
+    a = [0, y_front * 0.9, 0.80 * Hs + 0.10 * L]
+    b = [0, y_head + 0.07 * L, z_head + 0.08 * L]
+    for i, t in enumerate((0.3, 0.65)):
+        S.append(spike("spike_neck_%d" % (i + 1), _towards(a, b, t), 0.07 * L,
+                       0.045 * L, 0.9, cream, "neck"))
+
+    for side, sx in (("L", 1.0), ("R", -1.0)):
+        S += dragon_wing(side, [0.07 * L * sx, -0.26 * L, 0.93 * Hs],
+                         [0.30 * L * sx, -0.18 * L, 1.25 * Hs],
+                         [0.45 * L * sx, -0.12 * L, 1.55 * Hs],
+                         [[0.98 * L * sx, 0.02 * L, 1.20 * Hs],
+                          [0.82 * L * sx, 0.18 * L, 0.98 * Hs],
+                          [0.52 * L * sx, 0.26 * L, 0.92 * Hs]],
+                         [0.08 * L * sx, 0.18 * L, 0.92 * Hs], pal, "spine",
+                         0.028 * L)
+    return S
 
 
 # --------------------------------------------------------------------------

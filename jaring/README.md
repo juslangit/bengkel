@@ -110,7 +110,7 @@ plainly rather than reporting "−2% lighter".
 ## Where the maths came from
 
 All of it is lifted from **Retopo Kit**, the Blender add-on in
-`~/Desktop/project/3d/retopology` that solved the same problem with a person
+`~/Desktop/projects/3d/retopology` that solved the same problem with a person
 watching. The quad-size formula, the 2%-of-the-diagonal ray distance, the
 four-pixel island margin, decimating each LOD from the one above — those are
 numbers that were found to work on real sculpts, and they are re-used here

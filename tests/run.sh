@@ -156,7 +156,7 @@ done
 echo
 echo "── carrying a model from one tool to the other ─────────────────"
 
-MODEL=$(ls "$HOME"/Desktop/project/3d/bengkel/boneka/sessions/*.glb 2>/dev/null | head -1)
+MODEL=$(ls "$HOME"/Desktop/projects/3d/bengkel/boneka/sessions/*.glb 2>/dev/null | head -1)
 if [ -n "$MODEL" ]; then
   MODEL_JS=$(python3 -c 'import json,sys;print(json.dumps(sys.argv[1]))' "$MODEL")
   rm -f "$PIECES"

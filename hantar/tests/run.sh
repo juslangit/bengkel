@@ -22,7 +22,7 @@ rm -rf "$WORK"; mkdir -p "$WORK"
 
 BLENDER="${BENGKEL_BLENDER:-/Applications/Blender.app/Contents/MacOS/Blender}"
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-GAMES="$HOME/Desktop/project/game"
+GAMES="$HOME/Desktop/projects/game"
 FAKE="$GAMES/zz-hantar-test"
 
 PASS=0; FAIL=0; SKIP=0

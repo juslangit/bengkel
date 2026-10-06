@@ -50,6 +50,9 @@ def check_parser():
         ("a tall blue knight with a sword", "humanoid", ["sword"]),
         ("a chunky red robot with an antenna", "humanoid", ["antenna"]),
         ("a brown dog with a tail", "quadruped", ["tail"]),
+        ("a dragon", "dragon", []),
+        ("a red dragon with wings", "dragon", ["wings"]),
+        ("a four-legged dragon", "dragon", []),
         ("a small white chicken", "bird", []),
         ("a pine tree", "prop", []),
         ("a treasure chest", "prop", []),
@@ -61,6 +64,49 @@ def check_parser():
               plan["archetype"] == archetype, plan["archetype"])
         for extra in extras:
             check("  finds the %s" % extra, extra in plan["extras"])
+
+    # a dragon is not a dog: it has to have what makes one read as a dragon
+    for prompt in ("a dragon", "a four-legged dragon"):
+        stems = {s["part"].split(".")[0].rstrip("_0123456789")
+                 for s in recipes.plan_from_prompt(prompt)["steps"]}
+        for part in ("wing_membrane", "horn", "spike_back", "spike_tail",
+                     "claw", "belly", "tail"):
+            check("%s has %s" % (prompt, part), any(
+                st == part or st.startswith(part) for st in stems), str(sorted(stems)))
+
+    # what has no recipe goes to Claude; what has one never does. Claude itself
+    # is not called here - that is minutes and plan usage per check
+    import design
+    for prompt, wanted in (("a snail", True), ("a teapot", True),
+                           ("a cute octopus", True), ("a red dog", False),
+                           ("two cats", False), ("a dragon", False),
+                           ("a pine tree", False), ("a tall blue", False)):
+        check("%r %s designed" % (prompt, "is" if wanted else "is not"),
+              design.needs_design(prompt) is wanted)
+    mine = design.to_design(recipes.plan_from_prompt("a dragon"))
+    again = design.plan_from_design(mine, "a dragon")
+    check("a recipe written out reads back the same",
+          len(again["steps"]) == len(recipes.plan_from_prompt("a dragon")["steps"]))
+    check("  and keeps its skeleton", again["rig_profile"] == "dragon")
+    for broken, why in (
+            ({"parts": [{"part": "x", "shape": "blob", "color": "#ffffff"}]}, "an unknown shape"),
+            ({"parts": [{"part": "x", "shape": "sphere", "color": "red",
+                         "at": [0, 0, 0], "size": [1, 1, 1]}]}, "a colour that is not #rrggbb"),
+            ({"parts": [{"part": "x", "shape": "sphere", "color": "#ffffff",
+                         "at": [0, 0, 1e9], "size": [1, 1, 1]}]}, "a number out of range"),
+            ({"parts": [{"part": "x", "shape": "limb", "color": "#ffffff",
+                         "from": [0, 0, 0], "to": [0, 0, 1], "r0": 0.1, "r1": 0.1,
+                         "bone": {"name": "b", "head": [0, 0, 0], "tail": [0, 0, 1],
+                                  "parent": "nowhere"}}]}, "a bone with a missing parent"),
+            ({"parts": [{"part": "x", "shape": "sphere", "color": "#ffffff",
+                         "at": [0, 0, 0], "size": [1, 1, 1], "code": "import os"}] * 200},
+             "too many parts")):
+        check("a design with %s is refused" % why, bool(design.check(broken)))
+    floating = {"parts": [{"part": "x", "shape": "sphere", "color": "#ffffff",
+                           "at": [0, 0, 5], "size": [0.5, 0.5, 0.5]}]}
+    grounded = design.plan_from_design(floating, "a blob")
+    check("a floating design is stood on the floor",
+          abs(grounded["steps"][-1]["loc"][2] - 0.5) < 1e-6)
 
     plan = recipes.plan_from_prompt("a tall knight")
     short = recipes.plan_from_prompt("a short knight")
@@ -81,7 +127,8 @@ def check_parser():
               "lowest point %.3f" % low)
 
     # no part may be placed below the floor on a creature either
-    for prompt in ("a knight", "a dog", "a chicken"):
+    for prompt in ("a knight", "a dog", "a chicken", "a dragon",
+                   "a four-legged dragon"):
         plan = recipes.plan_from_prompt(prompt)
         low = min(s["loc"][2] - abs(s["size"][2]) for s in plan["steps"]
                   if s["shape"] != "limb")
@@ -89,13 +136,16 @@ def check_parser():
 
     # every bone's parent must exist, or the armature cannot be built
     for prompt in ("a knight with a sword", "a dog", "a chicken", "a flag",
-                   "a pine tree", "a snowman"):
+                   "a pine tree", "a snowman", "a dragon",
+                   "a four-legged dragon"):
         plan = recipes.plan_from_prompt(prompt)
         names = {s["bone"]["name"] for s in plan["steps"] if s["bone"]}
         orphans = [s["bone"]["name"] for s in plan["steps"] if s["bone"]
                    and s["bone"]["parent"] and s["bone"]["parent"] not in names]
         check("%s has no orphan bones" % prompt, not orphans, str(orphans))
-        attached = {s["attach"] for s in plan["steps"] if s.get("attach")}
+        # "@skin" is not a bone: that part takes the body's own weights
+        attached = {s["attach"] for s in plan["steps"]
+                    if s.get("attach") and s["attach"] != "@skin"}
         missing = sorted(attached - names)
         check("%s attaches only to real bones" % prompt, not missing, str(missing))
 
@@ -103,6 +153,7 @@ def check_parser():
     # the thing the prompt is about rather than the last noun in it
     for prompt, subject in [("a tall blue knight with a sword", "knight"),
                             ("a brown dog with a tail", "dog"),
+                            ("a green dragon", "dragon"),
                             ("a small white chicken", "chicken"),
                             ("a pine tree", "tree"),
                             ("a treasure chest", "chest")]:
@@ -437,6 +488,8 @@ def check_worker(quick):
         ("a tall blue knight with a sword and a cape", "humanoid", 14),
         ("a chunky red robot with an antenna", "humanoid", 14),
         ("a brown dog with a tail", "quadruped", 14),
+        ("a dragon", "dragon", 24),
+        ("a four-legged dragon", "dragon", 24),
         ("a small white chicken", "bird", 4),
         ("a pine tree", "prop", 1),
         ("a treasure chest", "prop", 1),
@@ -489,7 +542,7 @@ def check_worker(quick):
 
         moves = ["walk", "idle", "spin"] if quick else \
             ["idle", "walk", "run", "jump", "wave", "dance", "attack", "spin",
-             "die", "sit"]
+             "die", "sit", "fly"]
         for move in moves:
             got = w.run("animated", 180, cmd="animate", prompt=move)
             ok = check("  animate %s" % move, got["event"] == "animated",

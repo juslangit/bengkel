@@ -31,7 +31,7 @@ from serve import Tool, HOME     # noqa: E402
 
 tool = Tool("hantar", __file__, "@@HANTAR-READY@@", title="hantar")
 
-GAMES = os.path.join(HOME, "Desktop", "project", "game")
+GAMES = os.path.join(HOME, "Desktop", "projects", "game")
 MODEL_EXT = (".glb", ".gltf", ".fbx", ".obj", ".blend")
 
 

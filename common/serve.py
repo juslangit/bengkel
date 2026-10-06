@@ -28,7 +28,8 @@ What a tool gets for free:
     tool is allowed to read from
   * /api/library, the scan of every model on the machine, shared between all
     the tools and cached so they are not each walking the disk
-  * a Blender runner, for the work a browser cannot do
+  * a Blender runner, for the work a browser cannot do - through the one
+    shared Blender MCP, never a Blender of its own (see mcp.py)
   * its own folder under ~/Documents/bengkel/<tool>/ for whatever it makes
   * a watch on whatever started it, so it lets itself out when bengkel goes
 
@@ -51,13 +52,16 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, unquote
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import mcp                                                  # noqa: E402
+
 HOME = os.path.expanduser("~")
 COMMON = os.path.dirname(os.path.abspath(__file__))
 WORKSHOP = os.path.dirname(COMMON)
 
 # The only folders any tool will read a model out of.
 ROOTS = [
-    os.path.join(HOME, "Desktop", "project"),
+    os.path.join(HOME, "Desktop", "projects"),
     os.path.join(HOME, "Documents"),
     os.path.join(HOME, "Downloads"),
 ]
@@ -276,18 +280,13 @@ class Tool:
     # ── Blender, for what a browser cannot do ─────────────────────────
 
     def blender(self, script, job, timeout=900):
-        """Run one job through headless Blender and hand back what it said.
+        """Run one job through the shared Blender MCP and hand back what it said.
 
         `script` is a file in the tool's own blender/ folder. The job is passed
         as JSON on disk, and the answer comes back on one line beginning with
-        the tool's ready mark, so it can be found among Blender's own chatter.
+        @@JOB@@, so it can be found among whatever else the script printed. The
+        script runs in a scene of its own inside the shared Blender - see mcp.py.
         """
-        exe = BLENDER if os.path.exists(BLENDER) else shutil.which("blender")
-        if not exe:
-            return {"ok": False, "problems": [
-                "Blender was not found at %s. Set BENGKEL_BLENDER to where it is."
-                % BLENDER]}
-
         jobs = os.path.join(self.data, ".jobs")
         os.makedirs(jobs, exist_ok=True)
         job_file = os.path.join(jobs, "job-%s.json" % secrets.token_hex(6))
@@ -295,15 +294,12 @@ class Tool:
             json.dump(job, f)
 
         started = time.time()
-        cmd = [exe, "--background", "--factory-startup",
-               "--python", os.path.join(self.here, "blender", script),
-               "--", job_file]
-        self.log("blender:", script, job.get("job", ""))
+        self.log("blender (mcp):", script, job.get("job", ""))
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        except subprocess.TimeoutExpired:
-            return {"ok": False, "problems": [
-                "Blender took longer than %d seconds and was stopped." % timeout]}
+            printed = mcp.run_job(os.path.join(self.here, "blender", script),
+                                  [job_file], label=self.name, timeout=timeout)
+        except mcp.BlenderError as exc:
+            return {"ok": False, "problems": [str(exc)]}
         finally:
             try:
                 os.remove(job_file)
@@ -311,14 +307,14 @@ class Tool:
                 pass
 
         mark = "@@JOB@@"
-        for line in proc.stdout.splitlines():
+        for line in printed.splitlines():
             if line.startswith(mark):
                 answer = json.loads(line[len(mark):])
                 answer["seconds"] = round(time.time() - started, 1)
                 self.log("blender finished in %.1fs" % answer["seconds"])
                 return answer
 
-        tail = (proc.stderr or proc.stdout or "").strip().splitlines()[-3:]
+        tail = printed.strip().splitlines()[-3:]
         return {"ok": False, "problems": ["Blender said nothing back. " + " / ".join(tail)]}
 
     # ── running ───────────────────────────────────────────────────────
