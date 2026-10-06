@@ -105,6 +105,8 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
   <string>bengkel keeps your clips and exports in Documents, and reads models from there.</string>
   <key>NSDownloadsFolderUsageDescription</key>
   <string>bengkel reads 3D models you have downloaded.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>cermin records you moving, to capture the motion. The video stays on this Mac.</string>
 
   <!-- bengkel talks to its own server on 127.0.0.1 over plain HTTP. Without
        this, App Transport Security refuses the connection and the window

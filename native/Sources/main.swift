@@ -831,8 +831,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
         this._kit = kit;
         if (this._mountAssistant) this._mountAssistant(kit);
       },
-      onReceive(fn) { this._receive = fn; },
-      _deliver(payload) { if (this._receive) this._receive(payload); },
+      /* Something handed over before the page is listening is kept, not
+       * dropped. A tool started BY a hand-over is ready (its server answered)
+       * well before its page's modules have run and called onReceive, and
+       * delivering into that gap lost the file without a word: cermin's
+       * first take sent to gerak opened gerak on "nothing open". */
+      _queued: [],
+      onReceive(fn) {
+        this._receive = fn;
+        this._queued.splice(0).forEach((payload) => fn(payload));
+      },
+      _deliver(payload) {
+        if (this._receive) this._receive(payload); else this._queued.push(payload);
+      },
     };
     """
 
@@ -1070,6 +1081,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate,
     }
 
     // ── the pages' dialogs, natively ────────────────────────────────
+
+    /* The camera, for cermin's Record button.
+     *
+     * Left to itself WebKit asks about the camera every time a page wants it,
+     * in its own sheet, on top of the one macOS shows the first time. The
+     * pages bengkel hosts are its own tools on this Mac, so they get the
+     * camera without the extra question - and only they do: anything not
+     * served from 127.0.0.1 or localhost is refused. macOS still asks once,
+     * for bengkel as a whole, and remembers, because the app is signed with
+     * a stable certificate (common/sign.sh). */
+    func webView(_ view: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+                 initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType,
+                 decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        let local = ["127.0.0.1", "localhost"].contains(origin.host)
+        log("camera asked for by \(origin.host):\(origin.port) — \(local ? "granted" : "refused")")
+        decisionHandler(local ? .grant : .deny)
+    }
 
     func webView(_ view: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
                  initiatedByFrame frame: WKFrameInfo, completionHandler done: @escaping () -> Void) {

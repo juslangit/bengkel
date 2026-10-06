@@ -87,6 +87,20 @@
       "heavy": false
     },
     {
+      "id": "cermin",
+      "name": "cermin",
+      "tagline": "Capture motion",
+      "blurb": "Upload a video of someone moving, or record yourself. It finds the person and puts the motion on a skeleton.",
+      "symbol": "figure.dance",
+      "accent": "#3fd0c9",
+      "root": "~/Desktop/projects/3d/cermin",
+      "server": "server.py",
+      "noOpen": "--no-open",
+      "portEnv": "CERMIN_PORT",
+      "ready": "@@CERMIN-READY@@",
+      "heavy": false
+    },
+    {
       "id": "gerak",
       "name": "gerak",
       "tagline": "Pose and animate",
